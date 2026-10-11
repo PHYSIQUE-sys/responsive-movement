@@ -20,7 +20,20 @@ public class RepeatedWalkContinuityTest
     @Test public void newestRepeatedKnightCaptureCannotInventAnExtraOutAndBackAfterClicksStop() throws Exception { replay("B"); }
     @Test public void markedCircleCaptureKeepsTurningAndTravelBudgetsThroughThePause() throws Exception { replay("C"); }
 
+    @Test
+    public void correctedFineSpeedRetainsCapturedRoutesArrivalsAndSingleFrameBudgets() throws Exception
+    {
+        for (String id : new String[] {"A", "B", "C"}) { replay(id, 1.08); }
+    }
+
     private static void replay(String id) throws Exception
+    {
+        // These captures were executed at the formerly quantized effective
+        // 1.10 pace. Keep their geometry-specific historical assertions intact.
+        replay(id, 1.10);
+    }
+
+    private static void replay(String id, double speed) throws Exception
     {
         List<String[]> map = new ArrayList<>(), events = new ArrayList<>();
         String[] header = null;
@@ -42,7 +55,7 @@ public class RepeatedWalkContinuityTest
         for (long cadence : new long[] {8_333, 20_000, 33_333})
         {
             Fixture f = new Fixture(Integer.parseInt(header[2]), Integer.parseInt(header[3]), 8000, 8000);
-            f.speed = 1.08; f.turnSpeed = 30; f.smoothing = 0; f.originalWhenAligned = false;
+            f.speed = speed; f.turnSpeed = 30; f.smoothing = 0; f.originalWhenAligned = false;
             f.nativeOrientation = Integer.parseInt(header[4]);
             f.controller.close(); f.controller.update(); f.controller.presented();
             for (int[] column : f.flags) { Arrays.fill(column, CollisionDataFlag.BLOCK_MOVEMENT_FULL); }
@@ -76,12 +89,16 @@ public class RepeatedWalkContinuityTest
                 }
                 int angle = f.controller.orientation(); f.controller.update();
                 LocalPoint actual = f.controller.position();
-                if (id.equals("C") && t >= 7_740_000 && t <= 7_940_000)
+                // The fixed-time window identifies a particular positive-turn
+                // connector at the captured effective pace. A different speed
+                // can choose a different checked connector with another heading.
+                if (speed == 1.10 && id.equals("C") && t >= 7_740_000 && t <= 7_940_000)
                 {
-                    assertTrue("no corrective facing sweep in the marked curved-join window",
+                    assertTrue("no corrective facing sweep in the marked curved-join window at " + t +
+                        "us, angle " + angle + " -> " + f.controller.orientation() + " position " + actual,
                         MotionMath.difference(angle,f.controller.orientation()) >= -1);
                 }
-                assertTrue("one frame movement budget at " + t, MovementPath.distance(previous,actual) <= Math.ceil((t - previousTime) * 0.00044) + 1);
+                assertTrue("one frame movement budget at " + t, MovementPath.distance(previous,actual) <= Math.ceil((t - previousTime) * 0.0004 * speed) + 1);
                 assertTrue("one turn budget", Math.abs(MotionMath.difference(angle,f.controller.orientation())) <= Math.ceil(30 * (t - previousTime) / 16_667.0) + 1);
                 if (t >= begin && t < end)
                 {
@@ -143,19 +160,34 @@ public class RepeatedWalkContinuityTest
     @Test
     public void aCurvedConnectorCannotMakeFacingOvershootAndThenLookBack()
     {
+        checkCurveFacing(1.1);
+        checkCurveFacing(1.08);
+    }
+
+    private static void checkCurveFacing(double speed)
+    {
         MovementPath path = MovementPath.anticipate(p(6848,8000),p(6848,8000),p(7104,8128),
-            true,0,1.1,MovementPath.freshDeadline(0),(a,b)->true);
+            true,0,speed,MovementPath.freshDeadline(0),(a,b)->true);
         for (int ms = 20; ms <= 200; ms += 20) { path.advance(ms*1_000_000L); }
-        int incoming = MotionMath.heading(path.turnX(),path.turnY());
-        LocalPoint before = path.position();
-        int terminal = MotionMath.heading(6976-before.getX(),8000-before.getY());
-        int change = MotionMath.difference(incoming,terminal), previous = incoming;
+        int incoming = 0, change = 0, previous = 0;
         path = path.retargetWalk(p(7104,7872),true,200_000_000L);
         int samples = 0;
         for (int ms = 202; ms <= 400; ms += 2)
         {
             path.advance(ms*1_000_000L);
-            if (!path.traceSnapshot().fields(0).matches(".* joins=\\[[0-9].*")) { break; }
+            String snapshot = path.traceSnapshot().fields(0);
+            if (!snapshot.matches(".* joins=\\[[0-9].*")) { break; }
+            if (samples == 0)
+            {
+                // Pace can change the chosen checked connector. Derive its
+                // intended endpoint tangents from published cubic geometry,
+                // rather than assuming the old 1.10 connector's anchor.
+                String[] values = snapshot.split(" joins=\\[")[1].split("\\]")[0].split(",");
+                double[] controls = Arrays.stream(values).limit(8).mapToDouble(Double::parseDouble).toArray();
+                incoming = MotionMath.heading(controls[2] - controls[0], controls[3] - controls[1]);
+                int terminal = MotionMath.heading(controls[6] - controls[4], controls[7] - controls[5]);
+                change = MotionMath.difference(incoming, terminal); previous = incoming;
+            }
             ++samples;
             int heading = MotionMath.heading(path.turnX(),path.turnY());
             int progress = Integer.signum(change)*MotionMath.difference(incoming,heading);

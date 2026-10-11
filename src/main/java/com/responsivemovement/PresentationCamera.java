@@ -1,5 +1,6 @@
 package com.responsivemovement;
 
+import java.util.function.LongSupplier;
 import net.runelite.api.Client;
 import net.runelite.api.Model;
 import net.runelite.api.Perspective;
@@ -18,8 +19,10 @@ final class PresentationCamera
     private static final int MARKER_MODEL = 3351;
     private final Client client;
     private final ResponsiveMovementConfig config;
-    private float worldX = Float.NaN, worldZ = Float.NaN, height = Float.NaN;
-    private long lastNanos;
+    private final LongSupplier clock;
+    private double worldX = Double.NaN, worldZ = Double.NaN;
+    private float height = Float.NaN;
+    private long lastNanos = -1;
     private volatile boolean detachedForDraw;
     private RuneLiteObject marker;
     private double markerPhase;
@@ -28,7 +31,12 @@ final class PresentationCamera
 
     PresentationCamera(Client client, ResponsiveMovementConfig config)
     {
-        this.client = client; this.config = config;
+        this(client, config, System::nanoTime);
+    }
+
+    PresentationCamera(Client client, ResponsiveMovementConfig config, LongSupplier clock)
+    {
+        this.client = client; this.config = config; this.clock = clock;
     }
 
     void beforeInput()
@@ -54,13 +62,13 @@ final class PresentationCamera
         WorldPoint world = player.getWorldLocation();
         LocalPoint local = LocalPoint.fromWorld(player.getWorldView(), world);
         if (local == null) { synchronize(player); return; }
-        long now = System.nanoTime();
-        float delta = lastNanos == 0 ? REFERENCE_FRAME_MS : Math.min(100, Math.max(0, now - lastNanos) / 1_000_000f);
+        long now = clock.getAsLong();
+        float delta = lastNanos < 0 ? REFERENCE_FRAME_MS : Math.min(100, Math.max(0, now - lastNanos) / 1_000_000f);
         lastNanos = now;
-        float offsetX = local.getX() - world.getX() * 128f;
-        float offsetZ = local.getY() - world.getY() * 128f;
-        float x = Float.isFinite(worldX) ? worldX + offsetX : client.getCameraFocalPointX();
-        float z = Float.isFinite(worldZ) ? worldZ + offsetZ : client.getCameraFocalPointZ();
+        double offsetX = local.getX() - world.getX() * 128.0;
+        double offsetZ = local.getY() - world.getY() * 128.0;
+        double x = Double.isFinite(worldX) ? worldX + offsetX : client.getCameraFocalPointX();
+        double z = Double.isFinite(worldZ) ? worldZ + offsetZ : client.getCameraFocalPointZ();
         if (!Float.isFinite(height)) { height = client.getCameraFocalPointY(); }
         float ground = footprintHeight(player.getWorldView(), destination, player.getWorldView().getPlane(), player.getFootprintSize());
         height = easeHeight(height, ground - player.getAnimationHeightOffset() - followHeight(), delta);
@@ -73,16 +81,14 @@ final class PresentationCamera
         }
         else if (distance > 0)
         {
-            double speed = finite(config.cameraVelocity(), 4, 0, 100) * distance /
-                Math.max(1, config.followDistance()) * delta / REFERENCE_FRAME_MS;
-            double fraction = Math.min(1, speed / distance);
+            double fraction = followFraction(config.cameraVelocity(), config.followDistance(), delta);
             x += dx * fraction; z += dz * fraction;
         }
         client.setCameraMode(1);
         client.setFreeCameraSpeed(0);
-        client.setCameraFocalPointX(x);
+        client.setCameraFocalPointX((float) x);
         client.setCameraFocalPointY(height);
-        client.setCameraFocalPointZ(z);
+        client.setCameraFocalPointZ((float) z);
         detachedForDraw = true;
         worldX = x - offsetX; worldZ = z - offsetZ;
         updateMarker(player, destination);
@@ -90,15 +96,15 @@ final class PresentationCamera
 
     private void synchronize(Player player)
     {
-        lastNanos = 0;
+        lastNanos = -1;
         if (client.getCameraMode() == 0 && player != null && player.getWorldView() != null)
         {
             WorldPoint world = player.getWorldLocation();
             LocalPoint local = LocalPoint.fromWorld(player.getWorldView(), world);
             if (local != null)
             {
-                worldX = client.getCameraFocalPointX() - (local.getX() - world.getX() * 128f);
-                worldZ = client.getCameraFocalPointZ() - (local.getY() - world.getY() * 128f);
+                worldX = client.getCameraFocalPointX() - (local.getX() - world.getX() * 128.0);
+                worldZ = client.getCameraFocalPointZ() - (local.getY() - world.getY() * 128.0);
                 height = client.getCameraFocalPointY();
             }
         }
@@ -128,6 +134,16 @@ final class PresentationCamera
         double blend = 1 - Math.pow(0.5, Math.max(0, Math.min(100, millis)) / 80.0);
         float value = current + (target - current) * (float) blend;
         return Math.abs(target - value) < 0.01 ? target : value;
+    }
+
+    static double followFraction(double velocity, int distance, double millis)
+    {
+        if (millis <= 0) { return 0; }
+        double reference = Math.min(1, finite(velocity, 4, 0, 100) / Math.max(1, distance));
+        if (reference >= 1) { return 1; }
+        // Match the former 60-FPS response, integrating its remaining-distance
+        // decay exactly instead of applying a cadence-dependent linear step.
+        return -Math.expm1(Math.log1p(-reference) * Math.min(100, millis) / REFERENCE_FRAME_MS);
     }
 
     static float tileHeight(WorldView view, float x, float y, int plane)
@@ -170,7 +186,7 @@ final class PresentationCamera
             markerNanos = 0;
             return;
         }
-        long now = System.nanoTime();
+        long now = clock.getAsLong();
         float delta = markerNanos == 0 ? REFERENCE_FRAME_MS : Math.min(100, Math.max(0, now - markerNanos) / 1_000_000f);
         markerNanos = now;
         if (marker == null) { marker = client.createRuneLiteObject(); }
@@ -197,14 +213,14 @@ final class PresentationCamera
 
     void sceneChanged()
     {
-        beforeInput(); lastNanos = 0;
+        beforeInput(); lastNanos = -1;
         markerNanos = 0;
         if (marker != null) { marker.setActive(false); marker = null; }
     }
 
     void close()
     {
-        sceneChanged(); worldX = worldZ = height = Float.NaN; markerPhase = markerOrientation = 0;
+        sceneChanged(); worldX = worldZ = Double.NaN; height = Float.NaN; markerPhase = markerOrientation = 0;
     }
 
     private static int clamp(int value, int low, int high) { return Math.max(low, Math.min(high, value)); }

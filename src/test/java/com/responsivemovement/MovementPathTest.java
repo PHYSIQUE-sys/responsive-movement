@@ -220,6 +220,36 @@ public class MovementPathTest
     }
 
     @Test
+    public void fineConfiguredSpeedSurvivesConstructionLiveChangesAndForecasts()
+    {
+        for (boolean run : new boolean[] {false, true})
+        {
+            for (double configured : new double[] {4.9, 5.0, 5.1, 5.2, 5.3, 5.4, 5.5})
+            {
+                double speed = MovementPath.configuredSpeed(configured);
+                MovementPath confirmed = MovementPath.idle(tile(10, 10), 0, speed, OPEN);
+                assertTrue(confirmed.accept(tile(run ? 12 : 11, 10), run));
+                MovementPath preview = MovementPath.anticipate(tile(10, 10), tile(10, 10), tile(14, 10),
+                    run, 0, speed, MovementPath.freshDeadline(0), OPEN);
+                assertNotNull(preview);
+                for (MovementPath path : new MovementPath[] {confirmed, preview})
+                {
+                    path.advance(100_000_000L);
+                    assertEquals(tile(10, 10).getX() + Math.round((run ? 40 : 20) * speed), path.position().getX());
+                    LocalPoint before = path.position();
+                    path.speed(MovementPath.configuredSpeed(5.1));
+                    assertEquals(before, path.position());
+                    path.advance(200_000_000L);
+                    assertEquals(tile(10, 10).getX() + Math.round((run ? 40 : 20) * (speed + 1.02)), path.position().getX());
+                }
+            }
+        }
+        assertEquals(0.1, MovementPath.normalizeSpeed(-1), 0);
+        assertEquals(2, MovementPath.normalizeSpeed(100), 0);
+        assertEquals(1, MovementPath.normalizeSpeed(Double.NaN), 0);
+    }
+
+    @Test
     public void repeatedFramesDoNotSpendTheMovementClockTwice()
     {
         MovementPath path = MovementPath.idle(tile(10, 10), 0, 1, OPEN);

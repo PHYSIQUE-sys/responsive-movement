@@ -5,9 +5,6 @@ import java.awt.Dimension;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
 import javax.inject.Inject;
 import net.runelite.api.Client;
 import net.runelite.api.HeadIcon;
@@ -16,6 +13,7 @@ import net.runelite.api.Perspective;
 import net.runelite.api.Player;
 import net.runelite.api.Point;
 import net.runelite.api.Skill;
+import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.plugins.interfacestyles.InterfaceStylesPlugin;
@@ -32,7 +30,7 @@ final class MovementOverheads extends Overlay
     private final ResponsiveMovementPlugin plugin;
     private final ResponsiveMovementConfig config;
     private final ConfigManager configManager;
-    private final List<Hitsplat> hitsplats = new ArrayList<>();
+    private final OverheadHitsplats hitsplats = new OverheadHitsplats();
     private final OverheadAssets assets = new OverheadAssets();
     private int healthUntilCycle;
     private final BufferedImage hdFront;
@@ -52,16 +50,18 @@ final class MovementOverheads extends Overlay
 
     void tick()
     {
-        hitsplats.removeIf(hit -> client.getGameCycle() >= hit.getDisappearsOnGameCycle());
+        hitsplats.tick(client.getGameCycle());
     }
 
     void hit(Hitsplat hit)
     {
-        hitsplats.add(hit);
+        hitsplats.hit(hit, client.getGameCycle());
         healthUntilCycle = client.getGameCycle() + 300;
     }
 
-    boolean ready() { return assets.ready(); }
+    // The renderer publishes hideUi=false during an ambiguous burst, while
+    // keeping custom body movement. The overlay then suppresses its whole UI.
+    boolean ready() { return assets.ready() && !hitsplats.nativeRequired(client.getGameCycle()); }
     void clear() { hitsplats.clear(); healthUntilCycle = 0; }
 
     @Override
@@ -77,9 +77,12 @@ final class MovementOverheads extends Overlay
         if (!config.overheads() || !plugin.customUi()) { return null; }
         Player player = client.getLocalPlayer();
         LocalPoint point = plugin.position();
-        if (player == null || point == null) { return null; }
-        int ground = Perspective.getFootprintTileHeight(client, point, player.getWorldView().getPlane(), player.getFootprintSize());
-        Point head = Perspective.localToCanvas(client, point.getX(), point.getY(),
+        WorldView view = player == null ? null : player.getWorldView();
+        if (view == null || point == null || point.getWorldView() != view.getId() ||
+            point.getSceneX() < 0 || point.getSceneY() < 0 ||
+            point.getSceneX() >= view.getSizeX() || point.getSceneY() >= view.getSizeY()) { return null; }
+        int ground = Perspective.getFootprintTileHeight(client, point, view.getPlane(), player.getFootprintSize());
+        Point head = Perspective.localToCanvas(client, point.getWorldView(), point.getX(), point.getY(),
             ground - player.getLogicalHeight() - config.overheadHeight());
         if (head == null) { return null; }
         int offset = 0;
@@ -140,24 +143,18 @@ final class MovementOverheads extends Overlay
 
     private void drawHitsplats(Graphics2D graphics, Player player, LocalPoint location)
     {
-        List<Hitsplat> active = new ArrayList<>();
-        for (Hitsplat hit : hitsplats)
-        {
-            if (hit.getDisappearsOnGameCycle() > client.getGameCycle()) { active.add(hit); }
-        }
-        active.sort(Comparator.comparingInt((Hitsplat hit) ->
-            100 * (hit.getDisappearsOnGameCycle() - client.getGameCycle()) + hit.getAmount()).reversed());
         graphics.setFont(FontManager.getRunescapeSmallFont());
         int spacing = config.hitsplatSpacing();
         int[][] offsets = {{0, 0}, {0, -spacing + 5}, {-spacing / 2 - 3, -spacing / 2}, {spacing / 2 + 3, -spacing / 2}};
-        for (int i = Math.min(4, active.size()) - 1; i >= 0; --i)
+        for (int i = 3; i >= 0; --i)
         {
-            Hitsplat hit = active.get(i);
-            String text = Integer.toString(hit.getAmount());
+            OverheadHitsplats.Hit hit = hitsplats.slot(i, client.getGameCycle());
+            if (hit == null) { continue; }
+            String text = Integer.toString(hit.amount);
             Point point = Perspective.getCanvasTextLocation(client, graphics, location, text, player.getLogicalHeight() / 2);
             if (point == null) { continue; }
             int x = point.getX() + offsets[i][0], y = point.getY() + 8 + offsets[i][1];
-            BufferedImage image = assets.hit(hit.getHitsplatType());
+            BufferedImage image = assets.hit(hit.type);
             FontMetrics metrics = graphics.getFontMetrics();
             if (image != null)
             {

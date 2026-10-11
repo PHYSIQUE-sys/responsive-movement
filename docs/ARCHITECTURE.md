@@ -405,7 +405,9 @@ The retained rules include:
 - Normal base travel of 4/8 local units per 20 ms walking/running, scaled by the
   movement-speed setting: **5.0** is the former **1.0** pace, with 0.1 increments
   applying a 2% change. The setting ranges from 0.5 to 10.0. Changing speed does
-  not reset position.
+  not reset position. Internal normalization clamps rather than rounding the
+  multiplier: 5.1 now retains its intended 1.02 pace throughout construction,
+  live changes, forecasts and diagnostics.
 - One time budget per rendered update, including queued/corrective legs.
 - Optional **Catch up to true tile** (`catchUp`, default on) applies a bounded
   displayed-speed boost only to queued travel ending at confirmed authority.
@@ -672,6 +674,13 @@ test now covers both-axis translation and restoration to native input mode. The
 area-crossing path correction removes the artificial reverse/stop it previously
 followed. It cannot supply frames while the native client is stalled loading.
 
+Horizontal follow integrates exponential remaining-distance decay calibrated to
+the former 60-FPS response. Its retained world-relative horizontal coordinates use
+double precision; only the published native focal point is converted to float.
+Equal elapsed time toward a held target now gives the same focus across frame splits,
+including zero-time repeated preparation. Snap distance and native input-mode,
+zoom and follow-height policies remain in place.
+
 Free camera mode is confined to drawing. The post-draw listener returns to native
 camera mode, as do input-processing boundaries. Native minimap conversion and
 right-click menus remain authoritative. The plugin observes `MenuOptionClicked`:
@@ -735,6 +744,49 @@ confirmation is pending. See `agent-work/early-0132/CHECKPOINT.md`.
 
 ## Overheads, callbacks, and diagnostics
 
+The user now requests a compact **profiles-only** sidebar, rather than the removed
+full duplicated-settings sidebar. `MovementProfilesPanel` owns a single-selection
+Profiles list and bottom Load/Save/Delete buttons with RuneLite dark styling. Row
+selection is browsing only. Load explicitly applies settings and shows the reminder
+to reopen the standard settings page if its already-rendered controls are stale;
+it does not require a game/plugin restart. Save prefills the last loaded/saved name.
+Delete requires confirmation and only changes saved metadata, not live settings.
+The empty-state scroll header is attached only when no profiles exist; a populated
+list removes the header viewport entirely so its first row starts at the top border.
+
+`MovementProfilesSidebar` owns navigation, dialogs and UI refresh on EDT and submits
+one guarded client-thread task for each action. Lifecycle, configuration-profile
+generation and native profile-ID checks reject stale queued actions. Profile changes
+cancel open dialogs and reset pending UI ownership. Shutdown captures the retiring
+helper, closes dialogs and removes its exact navigation button asynchronously; no
+shutdown waits are introduced. Supported ConfigManager writes update the same
+persisted keys read by the live plugin. Native settings-panel controls are not
+modified through reflection or UI-tree inspection.
+
+`MovementSettings` lists 31 typed movement/appearance settings for profiles and the
+three independent debugging controls for bookmark evidence. `MovementProfiles`
+reads/validates the retained schema-1 JSON under `savedMovementProfiles` and
+`selectedMovementProfile` in the existing group, preserving earlier saves. Load
+validates all values before any write and retains current values for missing keys;
+unknown/debugging keys are not applied. Same-name save updates the entry. Delete
+preserves other saves and clears the last-loaded name only if that save was deleted.
+The UI's action/confirmation/notice checks and backend/live-clock checks pass; native
+visual presentation of the panel still requires the user's check.
+**Debugging** remains the final native settings section, retaining `explainStarts`
+and `recordTrace` and adding `traceBookmarkKey`.
+
+`TraceBookmarkKeyListener` observes a configured key without consuming/injecting input,
+suppresses repeat, and clears its latch on release/focus loss. Hotkey requests
+copy their observation time and queue one client-thread callback. `TraceBookmark`
+captures only scalar/settings/local-point and route-snapshot evidence, never posed
+models or collision crops. It has an independent entry sequence without changing
+click ownership or once-per-cycle position sampling. Disabled recording produces
+no bookmark snapshot or filesystem resolution. Bookmark flushes use the existing
+bounded ordered asynchronous managed-Filepath writer; no callback waits for disk.
+Lifecycle generations reject requests queued by a retiring startup, and shutdown
+unregisters the bookmark key listener. The removed sidebar's bookmark button is no
+longer available; old button-sourced records remain compatible with the trace format.
+
 `TrueTileOverlay` is an independent, stateless overlay registered/removed with the
 plugin. Its **True tile** config section offers an opt-in highlight, `@Alpha` fill
 and border colours, 0–10-pixel border thickness and 0–20-pixel edge feathering.
@@ -754,6 +806,15 @@ API-double geometry and AWT raster checks pass; visual renderer confirmation is 
 `MovementOverheads` retains the original prayer, skull and hitsplat PNGs, overhead
 text, HP bars, and Interface Styles HD-health-bar support. The overlay consumes
 prepared positions; it never advances movement a second time.
+Head projection carries the player's actual world-view ID, suppressing missing
+projections and mismatched/out-of-scene positions. `OverheadHitsplats` retains at
+most four value-only hits in stable rotating slots rather than re-sorting them by
+amount/expiry. `HitsplatApplied` also includes native rejected hits and exposes no
+supported native slot/priority evidence. Overflow therefore suppresses the whole
+custom UI and publishes native UI visibility through `RenderState`, preserving
+native selection at the native player position while custom body movement continues.
+That owner lasts until all potentially visible burst hits expire; new burst events
+extend only UI lifetime. Clearing overheads clears both slots and native UI ownership.
 
 `RenderState` is an immutable callback snapshot. Filtering requires the exact
 local-player ID, player hash type and world-view ID. The renderer callback cannot

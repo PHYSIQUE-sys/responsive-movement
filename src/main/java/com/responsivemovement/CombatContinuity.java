@@ -68,13 +68,15 @@ final class CombatContinuity
 
     boolean observe(Client client, Player player, WorldView view, LocalPoint authority, boolean effect, long now)
     {
+        // A skipped preparation cannot let late native engagement revive a
+        // pending click. Established engagement has its own invalidation rules.
+        if (!engaged && now - clicked >= PENDING_NANOS) { return false; }
         if (!target.combat.valid(client)) { return false; }
         NpcApproach current = target.refreshCombat(view);
         if (current == null) { return false; }
         boolean interacting = current.sameTarget(player.getInteracting());
         if (engaged && !interacting) { return false; }
         if (interacting) { engaged = true; }
-        if (!engaged && now - clicked >= PENDING_NANOS) { return false; }
         boolean changed = !current.min.equals(target.min) || !current.max.equals(target.max);
         pendingMove |= changed;
         progressed = !authority.equals(lastAuthority);

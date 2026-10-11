@@ -38,6 +38,24 @@ by this preparation work. Use the development instructions below to try it.
 
 ## Main settings
 
+### Saved profiles
+
+Enable the plugin and open **Responsive Movement profiles** from RuneLite's sidebar
+(the stacked-cards icon). It contains a **Profiles** list and **Load**, **Save** and
+**Delete** buttons at the bottom.
+
+Selecting a row only selects it. **Load** applies that profile's movement, pacing,
+true-tile, camera and overhead settings immediately. The panel reminds you that
+you may need to back out of the standard plugin settings and reopen them to refresh
+the displayed sliders/checks. **No game restart or plugin restart is needed.**
+
+**Save** captures your current settings and opens a name dialog prefilled with the
+last loaded/saved name. Saving the same name updates it; a new name creates another
+profile, and Cancel leaves the saves untouched. **Delete** asks "Are you sure?"
+before removing the selected save; it does not change your currently applied settings.
+Saves persist in your current RuneLite configuration profile, including saves made
+with the earlier sidebar. Debugging controls stay independent of loaded profiles.
+
 | Setting | Default | What it controls |
 | --- | --- | --- |
 | Responsive starts | On | Early visual previews from observed clicks. |
@@ -49,7 +67,6 @@ by this preparation work. Use the development instructions below to try it.
 | Adaptive camera | On | Follow displayed movement during drawing; native camera mode is restored before input. |
 | Custom overhead rendering | On | Draw local-player overheads at the displayed position. |
 | Show native-position camera marker | Off | Fixed orb at the hidden native position while it differs from the displayed position. |
-| Record movement trace | Off | Local rotating diagnostic logs for investigating movement issues. |
 
 ### Movement pacing
 
@@ -90,12 +107,30 @@ the native client's interpolation rather than server authority, and never uses
 Responsive Movement's predicted/displayed position. Low frame rates, loading and
 teleports can still skip observations; no missing server route is invented.
 
+### Debugging
+
+**Debugging** is the final, initially collapsed section in the plugin settings.
+It contains **Explain movement starts**, **Record movement trace**, and the optional
+**Trace bookmark hotkey** (unset by default). Existing persisted debugging keys are
+retained. Bookmarks are currently available through the configured hotkey while recording.
+
+Press the configured hotkey immediately after something looks wrong.
+A bookmark records the local timestamp with UTC offset, settings and current
+display/native/true-tile/route context in the same asynchronous trace. A local
+message confirms submission. It does not move the player or restart movement;
+the hotkey observes its key without consuming game input, so choose a key that
+doesn't conflict with your other bindings.
+
 ## Limitations and validation
 
 Displayed position can briefly lead or trail the actual tile. Enable **True tile →
 Show true tile** with **Server true tile** tracking to see the authoritative location. Unsupported movement,
 teleports, unavailable models, and scene changes can use native presentation.
 The plugin does not remove the native client's loading stall.
+
+Custom hitsplats keep four stable display slots. During an ambiguous overflow burst,
+overheads temporarily use the native player position so the game selects the visible
+hits; custom overheads resume after the burst expires. Displayed body movement continues.
 
 The user confirms the prepared plugin is working as expected in their in-game
 testing with **117 HD**. Automated regressions and user reports cover many
@@ -104,9 +139,13 @@ but do not establish every interaction or renderer combination. See
 [validation notes](docs/VALIDATION.md) for confirmation scope and useful regression
 checks, including gates, region crossings, minimap input, and interaction approaches.
 The user reports substantially smoother circles and improved repeated knights.
-The user confirms configurable catch-up is working well. The newest ahead slowdown
-and tile highlight pass regressions and await in-game confirmation, as does the
-marked-pause handoff follow-up; see the current validation status above those checks.
+The latest user confirmation says the plugin is working well, including the recent
+native Walk observation and startup-timing fixes, and supersedes older pending notes.
+The user also confirms the speed/camera/overhead/combat review fixes are working well.
+The user confirms the compact profiles-only sidebar is working well apart from a
+top-spacing issue. That spacing correction and trace bookmarks pass automated
+regressions and await in-game confirmation;
+see the current validation status.
 
 ## Development
 
@@ -132,8 +171,8 @@ guide. Only the user performs in-game checks; do not automate gameplay input.
 
 ### Reporting a movement issue
 
-Enable **Movement → Record movement trace**, reproduce the issue, then turn it
-off to flush the pending samples. Report what happened, renderer, settings, and
+Enable **Debugging → Record movement trace**, reproduce the issue, add a bookmark
+if useful, then turn recording off to flush the pending samples. Report what happened, renderer, settings, and
 local timestamp with UTC offset. Logs stay on your computer in
 `%USERPROFILE%\.runelite\plugin-data\responsive-movement\`
 (or `~/.runelite/plugin-data/responsive-movement/`). RuneLite migrates the former

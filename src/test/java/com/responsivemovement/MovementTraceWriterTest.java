@@ -67,6 +67,32 @@ public class MovementTraceWriterTest
     }
 
     @Test
+    public void bookmarkFlushesThroughTheSameOffThreadManagedWriterInSampleOrder() throws Exception
+    {
+        Filepath directory = directory();
+        Thread caller = Thread.currentThread();
+        MovementTrace trace = new MovementTrace(() -> {
+            assertNotSame(caller, Thread.currentThread());
+            return directory;
+        });
+        NpcApproachControllerTest.Fixture f = new NpcApproachControllerTest.Fixture(5952, 5952, 7000, 7000);
+        try
+        {
+            trace.enabled(true); record(trace, 1);
+            ResponsiveMovementConfig config = new ResponsiveMovementConfig() {
+                @Override public boolean recordTrace() { return true; }
+            };
+            assertEquals(1, trace.bookmark(f.client, config, 0, "button", System.nanoTime(), f.start, null));
+            awaitWriter();
+            String text = read(directory.joinSegment("movement.log"));
+            assertTrue(text.contains("[RESPONSIVE-MOVEMENT-BOOKMARK]"));
+            assertTrue(text.contains("source=button"));
+            assertTrue(text.indexOf("seq=0") < text.indexOf("seq=1"));
+        }
+        finally { trace.close(); f.controller.close(); }
+    }
+
+    @Test
     public void rotationPreservesTheCurrentLogAndBoundsTheArchiveCount() throws Exception
     {
         Filepath directory = directory();

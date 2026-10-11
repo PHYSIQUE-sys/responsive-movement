@@ -3,6 +3,8 @@
 New diagnostic capture for the GE backtracking/zig-zag follow-up. This adds
 evidence; movement policies, native input and game actions are unchanged.
 Enable **Record movement trace** before reproducing and turn it off afterward.
+The control now lives in **Debugging**, with the optional bookmark hotkey.
+The separate sidebar has been removed; new manual bookmarks use the hotkey.
 Use `movement.log` together with `movement.previous*.log` under
 `.runelite/plugin-data/responsive-movement`. RuneLite's managed Filepath provider
 migrates the former `.runelite/responsive-movement` folder on first use if the
@@ -34,6 +36,21 @@ managed folder does not already exist. This does not change the trace schema.
   discrete state changes and at the first position sample in each batch. The
   associated position sample has the same sequence ID. This is **not** the game's
   hidden native route queue.
+- `[RESPONSIVE-MOVEMENT-BOOKMARK]`: a manual hotkey marker while recording.
+  It has its own ordered `seq`, `schema=2`, `source=button|hotkey`, and references
+  the last published `clickSeq`/`routeSeq` without claiming a new click or position
+  sample. `tUs`/`time` identify input observation; context is copied when the queued
+  client-thread callback runs. It records cycle, scene, world/view/base/plane,
+  displayed/native/authoritative/destination local coordinates, all current plugin
+  settings and a bounded route snapshot if available. `traceBookmarkKey` uses
+  `keyCode:modifierMask`. Live actor/config/path objects never reach the writer.
+  No collision crop, model read, path advance or budget renewal is performed.
+  Submission flushes the pending batch through the same asynchronous managed writer.
+  Normal backpressure/error limits still apply; a submission message is not a disk
+  completion guarantee. There is at most one outstanding request and one bookmark
+  per physical hotkey press, with key repeat and focus loss handled explicitly.
+  `source=button` remains readable for records created before the rejected sidebar
+  was removed; the current plugin exposes no bookmark button.
 
 `session` and `seq` identify ordered entries; click/map records share the click's
 sequence, and a route record shares its position sample's sequence. `clickSeq`

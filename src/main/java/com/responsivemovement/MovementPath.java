@@ -1296,7 +1296,9 @@ final class MovementPath
 
     static double normalizeSpeed(double value)
     {
-        return Double.isFinite(value) ? Math.round(Math.max(0.1, Math.min(2, value)) * 10) / 10.0 : 1;
+        // The user-facing 0.1 increment is an internal 0.02 increment.
+        // Clamp invalid/extreme input without quantizing that finer pace again.
+        return Double.isFinite(value) ? Math.max(0.1, Math.min(2, value)) : 1;
     }
 
     /** Convert the user-facing 5.0 baseline to the internal 1.0 pace. */

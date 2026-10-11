@@ -16,6 +16,139 @@ Movement** plugin must be disabled; the new plugin declares that conflict.
 
 ## Current status (supersedes dated pending notes below)
 
+**2026-10-11 profile-list top-spacing follow-up: implemented; 671 tests pass; awaiting confirmation of the spacing correction.**
+The user reports the compact sidebar is good, with the only reported problem being
+roughly two profile rows of empty space above their three saved profiles. The empty-state
+text was hidden, but its scroll-pane column-header viewport still reserved height.
+The populated list now removes that viewport entirely, putting the first row directly
+inside the top border. An empty list restores the explanatory message normally.
+The existing layout regression now checks the exact first-row position with three
+profiles and empty/populated transitions. Full
+`.\gradlew.bat build --offline --console=plain --no-daemon` passes **671 tests,
+zero failures/errors/skips**. The sidebar's preceding user-confirmed behaviour is
+the baseline; this small spacing change awaits its own visual check. Launch
+`.\gradlew.bat run` using
+[Using Jagex Accounts](https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts)
+and confirm the three profiles start at the top of the list without the blank gap.
+
+**2026-10-11 compact profiles-only sidebar: user-confirmed working well apart from the top-spacing issue addressed above; 671 tests passed.**
+The user explicitly requests a sidebar containing a section/list of profiles, with
+Load, Save and Delete at the bottom. Selecting a row must not apply a profile. Load
+must show the standard-settings refresh reminder, Delete must ask for confirmation,
+and the panel should fit RuneLite's styling. This supersedes the earlier native-only
+UI request and the rejected full duplicated-settings sidebar below.
+
+The new panel uses dark RuneLite colours, a padded single-selection Profiles list,
+count/empty state, and bottom-aligned Load/Save/Delete buttons. Load submits a guarded
+client-thread batch through ConfigManager, immediately updating the live settings.
+Its visible message states that the plugin settings page may need reopening to
+refresh displayed values and that no game restart is needed. Save prefills the last
+loaded/saved name and supports same-name updates or new saves; Cancel makes no writes.
+Delete defaults to Cancel and requires "Are you sure?" confirmation, preserves the
+applied settings/other saves, and clears the loaded-name metadata only when deleting
+that entry. Existing schema-1 saves remain readable. Debugging keys stay independent.
+
+Lifecycle/scope guards reject queued actions after shutdown or RuneLite configuration
+profile changes, including when a modal dialog was open. Nine new regressions verify
+selection versus explicit loading and its visible notice, prefill/overwrite/Cancel,
+delete confirmation/cancellation/live-setting preservation, stale action/dialog guards,
+invalid loads with no partial writes, and list/empty-state/button layout. All earlier
+profile, pacing and movement checks remain. Full
+`.\gradlew.bat build --offline --console=plain --no-daemon` passes **671 tests,
+zero failures/errors/skips**. These API-double and headless Swing tests do not establish
+native RuneLite look-and-feel or in-game visual continuity by themselves.
+
+User check: launch `.\gradlew.bat run` using
+[Using Jagex Accounts](https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts).
+Open **Responsive Movement profiles** (stacked-cards icon), save two different settings
+profiles, and select each without loading: game/settings must not change. Press Load
+while walking/running; check immediate settings application and continuous position,
+then back out of/reopen standard Responsive Movement settings to see refreshed controls.
+Check the visible refresh/no-restart notice. Save again and verify name prefill,
+Cancel preservation and same-name update. Test Delete's Cancel/confirmation on loaded
+and other profiles; movement settings must remain applied. Disable/re-enable/restart
+for persistence and toolbar/dialog cleanup, and switch RuneLite configuration profiles
+for scope. Judge panel readability, list scrolling and bottom buttons in the actual
+client. Only the user performs gameplay. The user subsequently confirms the panel is
+good apart from the reported spacing, addressed by the follow-up above; individual
+scope/lifecycle variants are not separately established by that general report.
+
+**2026-10-11 rejected full sidebar removed: historical 662-test checkpoint; superseded by the requested compact panel above.**
+The user rejects the separate sidebar and reiterates the exact layout: a named
+profile dropdown at the top of the existing plugin settings, Save underneath,
+an explicit Load button, and a Save dialog prefilled with the loaded name. They
+also report that choosing a profile did not visibly update the standard settings.
+The previous sidebar and its toolbar/dialog/config-refresh wiring are removed.
+Previously saved ConfigManager profile data is preserved; the backend is not wired
+to an active UI. No native dropdown/Save/Load feature is claimed complete.
+
+The blocker is a RuneLite settings-panel API limitation: the native configuration
+screen exposes fixed enum selectors but no supported dynamic named-profile/button
+extension. The project prohibits reflection and unsupported UI modification.
+Implementing the requested native controls requires supported RuneLite settings-panel
+extension capability; another sidebar is not an accepted substitute.
+
+Debugging remains at the bottom of the standard settings with stable persisted keys.
+The manual bookmark hotkey remains available while recording; its old sidebar button
+is removed. It submits timestamped value-only evidence through the existing ordered
+asynchronous Filepath writer without movement/model preparation or prediction renewal.
+The earlier 666-test build included four tests for the now-deleted sidebar; the current
+build passes **662 tests, zero failures/errors/skips**. Preserved profile backend tests
+are not evidence of functioning native UI loading or control refresh.
+
+User check: launch `.\gradlew.bat run` using
+[Using Jagex Accounts](https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts).
+Confirm the extra sidebar is absent after reloading this build, Debugging is last in
+the standard settings, and the configured hotkey produces one trace bookmark per
+press while recording. Stop recording and check bookmark timestamps/feedback. Native
+profile controls remain an implementation blocker, not an in-game validation task.
+
+**2026-10-11 code-review fixes A–E: user-confirmed working well for the tested situations; 651 tests passed.**
+The user subsequently reports **"all those fixes seem to be working well"**, superseding
+the review fixes' initial pending status. The user chooses native overhead handoff for
+ambiguous crowded hitsplats and confirms the resulting behaviour along with A/B/C/E.
+The latest preceding user report says everything is working well, including native
+Walk observation and startup timing; the reported build passed **652 tests**. That
+confirmation is newer than older pending notes below. Source scope matters: the
+checkout reviewed here contains the earlier 639-test suite and lacks that reported
+native Walk observation implementation/tests. This build verifies those 639 checks
+plus 12 new regressions; it does not reproduce the separate reported 652-test source.
+
+- **A:** Movement speed retains fine precision after conversion: 5.1 is 1.02×,
+  5.4 is 1.08×. Construction, forecasts, live changes and diagnostics no longer
+  round the multiplier to 0.1. Clamp/fallback behaviour is retained.
+- **B:** Horizontal camera following uses exact exponential decay calibrated to
+  its former 60-FPS response, with double-precision retained world focus. Cadence,
+  repeated preparation, scene-rebase and native camera-mode checks pass.
+- **C:** Head overhead projection uses the actual world view. Supported Perspective
+  projection/raster checks cover a sub-world view, missing projection and mismatch.
+- **D:** Four custom hitsplat slots remain stable. At ambiguous overflow, native
+  overhead rendering selects the actual visible hits at the native player position,
+  as chosen by the user. Custom body movement continues; the entire custom UI stays
+  suppressed until all potentially visible burst hits expire. Slot, expiry, cleanup
+  and renderer-publication checks pass. Supported APIs expose no native slot or
+  replacement-priority field, so custom rendering does not guess overflow winners.
+- **E:** First combat engagement cannot revive a click at/after its 1.8-second
+  expiry when preparation skips frames. Engagement observed before expiry retains
+  its existing lifetime/invalidation rules. Boundary and controller tests pass.
+
+The full `.\gradlew.bat build --offline --console=plain --no-daemon` command
+passes **651 tests, zero failures/errors/skips**. Historical pace assertions that
+depended on quantization now use exact timing; knight/circle replays retain both
+the old effective pace's geometric checks and corrected fine-pace coverage.
+These tests do not execute RuneScape's native renderer or establish visual feel.
+
+User check: launch `.\gradlew.bat run` with GPU or 117 HD using
+[Using Jagex Accounts](https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts).
+Compare speed 5.0/5.1/5.2/5.3/5.4 while walking/running, including live changes,
+circles/knights and true-tile pacing. Compare camera follow at different FPS and
+through region changes, then zoom, minimap and right-click input. Check overhead
+alignment in an actual non-top-level world view if available; missing projections
+should not draw in the wrong location. Check ordinary and crowded hitsplat bursts:
+stable custom slots, native-UI handoff without duplicate UI, and custom UI resumption.
+Recheck combat engagement/Walk escape and plugin disable/re-enable. Only the user
+performs gameplay and confirms these changes in-game.
+
 **2026-10-09 ahead slowdown, pacing section and true-tile highlight: implemented; 639 tests pass; awaiting in-game confirmation.**
 The user reports **"thats working well"** for the previous catch-up addition,
 then requests equivalent slowdown ahead of authority and dedicated config sections.

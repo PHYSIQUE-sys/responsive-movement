@@ -5,7 +5,9 @@ import java.awt.Rectangle;
 import java.awt.event.MouseEvent;
 import java.util.EnumSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.inject.Inject;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.MenuAction;
@@ -30,11 +32,15 @@ import net.runelite.client.callback.RenderCallback;
 import net.runelite.client.callback.RenderCallbackManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.events.ProfileChanged;
+import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseAdapter;
 import net.runelite.client.input.MouseManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.DrawManager;
+import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.overlay.OverlayManager;
 
 @PluginDescriptor(name = "Responsive Movement", internalName = "responsive-movement",
@@ -52,9 +58,13 @@ public class ResponsiveMovementPlugin extends Plugin
     @Inject private OverlayManager overlayManager;
     @Inject private MovementOverheads overheads;
     @Inject private TrueTileOverlay trueTile;
+    @Inject private KeyManager keyManager;
+    @Inject private ConfigManager configManager;
+    @Inject private ClientToolbar clientToolbar;
 
     private MovementController movement;
     private PresentationCamera camera;
+    private volatile MovementProfilesSidebar profilesSidebar;
     private volatile RenderState renderState = RenderState.NATIVE;
     private volatile long lastGpuCallbackNanos;
     private volatile Point primaryPress;
@@ -63,6 +73,10 @@ public class ResponsiveMovementPlugin extends Plugin
     private volatile boolean active;
     private long observedGpuCallback;
     private int ticksWithoutGpu;
+    private volatile long lifecycleGeneration;
+    private final AtomicBoolean bookmarkQueued = new AtomicBoolean();
+    private final TraceBookmarkKeyListener bookmarkKey = new TraceBookmarkKeyListener(
+        () -> config.traceBookmarkKey(), () -> active && config.recordTrace(), () -> requestBookmark("hotkey"));
 
     private final MouseAdapter mouse = new MouseAdapter()
     {
@@ -138,12 +152,22 @@ public class ResponsiveMovementPlugin extends Plugin
         mouseManager.registerMouseListener(mouse);
         overlayManager.add(overheads);
         overlayManager.add(trueTile);
+        keyManager.registerKeyListener(bookmarkKey);
+        ++lifecycleGeneration;
+        profilesSidebar = new MovementProfilesSidebar(configManager, config, task -> clientThread.invoke(task), clientToolbar);
+        profilesSidebar.start();
     }
 
     @Override
     protected void shutDown()
     {
         active = false;
+        ++lifecycleGeneration;
+        keyManager.unregisterKeyListener(bookmarkKey);
+        bookmarkKey.focusLost();
+        MovementProfilesSidebar retiringProfiles = profilesSidebar;
+        profilesSidebar = null;
+        if (retiringProfiles != null) { retiringProfiles.close(); }
         renderState = RenderState.NATIVE;
         primaryPress = null;
         previousTickDestination = null;
@@ -276,6 +300,41 @@ public class ResponsiveMovementPlugin extends Plugin
     {
         if (active && event.getActor() == client.getLocalPlayer()) { overheads.hit(event.getHitsplat()); }
         else if (active && movement != null) { movement.combatHit(event.getActor(), event.getHitsplat()); }
+    }
+
+    private void requestBookmark(String source)
+    {
+        if (!active || !bookmarkQueued.compareAndSet(false, true)) { return; }
+        long observedNanos = System.nanoTime();
+        long generation = lifecycleGeneration;
+        clientThread.invoke(() -> {
+            bookmarkQueued.set(false);
+            if (!active || generation != lifecycleGeneration || movement == null || !config.recordTrace()) { return; }
+            long sequence = movement.bookmark(source, observedNanos);
+            if (sequence >= 0)
+            {
+                String message = "Responsive Movement: trace bookmark #" + sequence + " submitted.";
+                if (client.getGameState() == GameState.LOGGED_IN) { client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", message, null); }
+            }
+        });
+    }
+
+    @Subscribe
+    public void onConfigChanged(ConfigChanged event)
+    {
+        MovementProfilesSidebar sidebar = profilesSidebar;
+        if (active && sidebar != null && ResponsiveMovementConfig.GROUP.equals(event.getGroup()) &&
+            (MovementProfiles.SAVES_KEY.equals(event.getKey()) || MovementProfiles.SELECTED_KEY.equals(event.getKey())))
+        {
+            sidebar.changed();
+        }
+    }
+
+    @Subscribe
+    public void onProfileChanged(ProfileChanged event)
+    {
+        MovementProfilesSidebar sidebar = profilesSidebar;
+        if (active && sidebar != null) { sidebar.profileChanged(); }
     }
 
     private Widget minimap()

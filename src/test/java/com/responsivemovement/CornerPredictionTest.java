@@ -125,7 +125,7 @@ public class CornerPredictionTest
     public void expiringContinuationPreservesSlowConfirmedMovement()
     {
         MovementPath path = MovementPath.idle(START, 0, 0.25, WALLS);
-        // Speed is normalized to 0.3: two running tiles take 256/0.12 ms.
+        // Fine speed is retained: two running tiles take 256/0.10 = 2560 ms.
         assertTrue(path.accept(CORRIDOR.get(2), true));
         advance(path, 0, 200);
         path.replacement(true);
@@ -136,7 +136,7 @@ public class CornerPredictionTest
         assertTrue(MovementPath.distance(before, path.position()) <= 2);
         assertEquals("confirmed", path.phase());
         assertTrue(path.clear());
-        advance(path, 1100, 2200);
+        advance(path, 1100, 2560);
         assertEquals(CORRIDOR.get(2), path.position());
         assertTrue(path.finished());
     }

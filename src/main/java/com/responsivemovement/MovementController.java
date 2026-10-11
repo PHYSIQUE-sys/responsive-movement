@@ -969,6 +969,13 @@ final class MovementController
         trace.poll();
     }
 
+    long bookmark(String source, long observedNanos)
+    {
+        if (!config.recordTrace()) { trace.enabled(false); return -1; }
+        return trace.bookmark(client, config, generation, source, observedNanos,
+            presentation.nativeVisible() && client.getLocalPlayer() != null ? client.getLocalPlayer().getLocalLocation() : visible, path);
+    }
+
     private boolean observeCombat(Player player, WorldView view, LocalPoint authority, boolean effect, long now)
     {
         if (combatContinuity == null) { return false; }

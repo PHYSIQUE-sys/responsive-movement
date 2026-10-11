@@ -6,6 +6,7 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.Keybind;
 import net.runelite.client.config.Range;
 
 @ConfigGroup(ResponsiveMovementConfig.GROUP)
@@ -23,6 +24,9 @@ public interface ResponsiveMovementConfig extends Config
     String CAMERA = "camera";
     @ConfigSection(name = "Overheads", description = "Overheads at the visible player", position = 4)
     String OVERHEADS = "overheads";
+    @ConfigSection(name = "Debugging", description = "Local diagnostic recording and movement-start messages", position = 5,
+        closedByDefault = true)
+    String DEBUGGING = "debugging";
 
     @ConfigItem(keyName = "responsiveStarts", name = "Responsive starts", position = 0,
         description = "Preview walk and interaction destinations around obstacles, from idle or after confirmed movement", section = MOVEMENT)
@@ -46,13 +50,17 @@ public interface ResponsiveMovementConfig extends Config
         description = "Use the native player pass when stationary position, pose, and facing agree", section = MOVEMENT)
     default boolean originalWhenAligned() { return true; }
 
-    @ConfigItem(keyName = "explainStarts", name = "Explain movement starts", position = 5,
-        description = "Print a local chat diagnostic when a responsive idle start is accepted", section = MOVEMENT)
+    @ConfigItem(keyName = "explainStarts", name = "Explain movement starts", position = 0,
+        description = "Print a local chat diagnostic when a responsive idle start is accepted", section = DEBUGGING)
     default boolean explainStarts() { return false; }
 
-    @ConfigItem(keyName = "recordTrace", name = "Record movement trace", position = 6,
-        description = "Record until switched off; retains about 64 MiB of rotating logs in .runelite/plugin-data/responsive-movement", section = MOVEMENT)
+    @ConfigItem(keyName = "recordTrace", name = "Record movement trace", position = 1,
+        description = "Record until switched off; retains about 64 MiB of rotating logs in .runelite/plugin-data/responsive-movement", section = DEBUGGING)
     default boolean recordTrace() { return false; }
+
+    @ConfigItem(keyName = "traceBookmarkKey", name = "Trace bookmark hotkey", position = 2,
+        description = "Mark a moment in an active movement trace. Recording must be enabled; the key is observed without consuming game input", section = DEBUGGING)
+    default Keybind traceBookmarkKey() { return Keybind.NOT_SET; }
 
     @ConfigItem(keyName = "clickSmoothingMs", name = "Walk-click smoothing (ms)", position = 7,
         description = "Wait up to 0–300 ms after a scene or minimap Walk click. When above 0, the next game tick ends the wait early. 0 disables the wait; native movement continues normally", section = MOVEMENT)

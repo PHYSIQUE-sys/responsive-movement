@@ -84,6 +84,20 @@ final class MovementTrace
         if (++pendingContexts >= 8 || pending.size() >= 128) { flush(); }
     }
 
+    long bookmark(Client client, ResponsiveMovementConfig config, int scene, String source,
+        long observedNanos, LocalPoint visible, MovementPath path)
+    {
+        enabled(config.recordTrace());
+        if (!recording) { return -1; }
+        long sequence = count++;
+        pending.add(new TraceBookmark(session, sequence, Math.max(0, observedNanos - started) / 1000,
+            started, clickSequence, routeSequence, client, config, scene, source, visible, path));
+        // Use the same ordered asynchronous writer. This is a diagnostic entry,
+        // not a position sample or click; neither sampling nor input ownership changes.
+        flush();
+        return sequence;
+    }
+
     void record(int cycle, int scene, LocalPoint visible, LocalPoint authority, LocalPoint nativePoint,
         MovementPath path, int orientation, int pose, int frame, int action, boolean nativeRender,
         LocalPoint destination, int clickCycle, String startDecision, boolean interactionApproach, String clickAction, int clickTarget,

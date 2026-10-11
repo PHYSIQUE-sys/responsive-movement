@@ -13,6 +13,53 @@ import static org.junit.Assert.*;
 public class PluginFallbackTest
 {
     @Test
+    public void crowdedHitsplatsPublishNativeUiWithoutGivingUpCustomBodyMovement() throws Exception
+    {
+        NpcApproachControllerTest.Fixture f = new NpcApproachControllerTest.Fixture(6336, 6336, 6848, 6336);
+        f.originalWhenAligned = false;
+        ResponsiveMovementConfig config = new ResponsiveMovementConfig() {
+            @Override public boolean adaptiveCamera() { return false; }
+        };
+        Client client = (Client) Proxy.newProxyInstance(Client.class.getClassLoader(), new Class<?>[] {Client.class},
+            (object, method, args) -> {
+                switch (method.getName())
+                {
+                    case "isGpu": return true;
+                    case "getCameraMode": return 0;
+                    case "getCameraFocalPointX": case "getCameraFocalPointY": case "getCameraFocalPointZ": return 0f;
+                    default: return f.clientCall(method.getName(), args);
+                }
+            });
+        ResponsiveMovementPlugin plugin = new ResponsiveMovementPlugin();
+        MovementOverheads overheads = new MovementOverheads(client, plugin, config, null);
+        inject(plugin, "client", client);
+        inject(plugin, "config", config);
+        inject(plugin, "movement", f.controller);
+        inject(plugin, "camera", new PresentationCamera(client, config));
+        inject(plugin, "overheads", overheads);
+        inject(plugin, "active", true);
+        try
+        {
+            for (int amount = 1; amount <= 4; ++amount) { overheads.hit(OverheadHitsplatsTest.hit(amount, 110)); }
+            plugin.onBeforeRender(new BeforeRender());
+            assertTrue(plugin.customUi());
+            overheads.hit(OverheadHitsplatsTest.hit(100, 120));
+            plugin.onBeforeRender(new BeforeRender());
+            assertFalse(plugin.customUi());
+            assertFalse(f.controller.nativeVisible());
+            assertFalse(f.objects.isEmpty());
+            f.frame(400); // cycle 120: every potentially visible hit has expired.
+            overheads.tick();
+            plugin.onBeforeRender(new BeforeRender());
+            assertTrue(plugin.customUi());
+            overheads.clear();
+            assertTrue(overheads.ready());
+        }
+        finally { f.controller.close(); }
+        assertTrue(f.objects.isEmpty());
+    }
+
+    @Test
     public void gpuLossBetweenRenderAndTickStillCleansUpThePresentation() throws Exception
     {
         NpcApproachControllerTest.Fixture f = new NpcApproachControllerTest.Fixture(6336, 6336, 6848, 6336);

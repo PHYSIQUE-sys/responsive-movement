@@ -51,9 +51,9 @@ public class CounterCornerArrivalTest
                     LocalPoint at = f.controller.position();
                     assertEquals("no unsupported diagonal pair: " + option + " at " + t, 6336, at.getX());
                     assertEquals("normal run pace then hold: " + option + " at " + t,
-                        Math.min(8128, Math.round(7872 + (t - 895) * 0.00044)), at.getY());
+                        Math.min(8128, Math.round(7872 + (t - 895) * 0.000432)), at.getY());
                     assertTrue(at.getY() >= before.getY());
-                    assertTrue(MovementPath.distance(before, at) <= Math.ceil((t - previousTime) * 0.00044) + 1);
+                    assertTrue(MovementPath.distance(before, at) <= Math.ceil((t - previousTime) * 0.000432) + 1);
                     assertTrue(Math.abs(MotionMath.difference(previousAngle, f.controller.orientation())) <=
                         30 * (t - previousTime) / 16667.0 + 1);
                     assertNull(f.destination);
@@ -281,7 +281,7 @@ public class CounterCornerArrivalTest
 
     private static void assertCounterPace(Fixture f, long micros)
     {
-        double distance = micros * 0.00044;
+        double distance = micros * 0.000432; // Exact 5.4 setting, rather than the former rounded 5.5.
         double tail = Math.max(0, Math.min(1, (distance - 256) / 256));
         LocalPoint expected = new LocalPoint((int) Math.round(6336 + 128 * tail),
             (int) Math.round(7872 + Math.min(256, distance) + 256 * tail), 0);

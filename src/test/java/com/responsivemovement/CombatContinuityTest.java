@@ -12,6 +12,66 @@ import static org.junit.Assert.*;
 /** Real controller, native action/engagement doubles and explicitly observed target steps. */
 public class CombatContinuityTest
 {
+    @Test
+    public void firstEngagementAtOrAfterPendingExpiryCannotReviveAClick()
+    {
+        for (int millis : new int[] {1800, 1801, 3000})
+        {
+            Fixture f = fixture(14, 10, 15, 10, null);
+            try
+            {
+                NpcApproach target = NpcApproach.capture(f.client, f.view,
+                    f.event(MenuAction.NPC_SECOND_OPTION, "Attack"), null);
+                CombatContinuity combat = new CombatContinuity(target, f.authority, f.now);
+                f.interacting = f.npc;
+                f.at(millis);
+                assertFalse(combat.observe(f.client, f.player, f.view, f.authority, false, f.now));
+                assertFalse(combat.engaged());
+            }
+            finally { f.controller.close(); }
+        }
+    }
+
+    @Test
+    public void engagementBeforeExpirySurvivesLaterFramesButStillRetiresOnTargetLoss()
+    {
+        Fixture f = fixture(14, 10, 15, 10, null);
+        try
+        {
+            NpcApproach target = NpcApproach.capture(f.client, f.view,
+                f.event(MenuAction.NPC_SECOND_OPTION, "Attack"), null);
+            CombatContinuity combat = new CombatContinuity(target, f.authority, f.now);
+            f.interacting = f.npc;
+            f.at(1799);
+            assertTrue(combat.observe(f.client, f.player, f.view, f.authority, false, f.now));
+            assertTrue(combat.engaged());
+            f.at(4000);
+            assertTrue(combat.observe(f.client, f.player, f.view, f.authority, false, f.now));
+            f.interacting = null;
+            assertFalse(combat.observe(f.client, f.player, f.view, f.authority, false, f.now));
+        }
+        finally { f.controller.close(); }
+    }
+
+    @Test
+    public void skippedControllerPreparationRetiresLateEngagementAndTargetFacing()
+    {
+        List<MovementTrace.Entry> trace = new ArrayList<>();
+        Fixture f = fixture(14, 10, 15, 10, trace);
+        try
+        {
+            f.click("Attack");
+            f.interacting = f.npc;
+            f.frame(1800);
+            assertEquals(f.authority, f.controller.position());
+        }
+        finally { f.controller.close(); }
+        assertTrue(trace.stream().filter(e -> e instanceof MovementTrace.Sample)
+            .map(e -> (MovementTrace.Sample) e).anyMatch(s ->
+                s.startDecision.equals("combat-follow-ended") && s.combatPhase.equals("none") && !s.combatEngaged));
+        assertTrue(f.objects.isEmpty());
+    }
+
     private static LocalPoint p(int x, int y) { return new LocalPoint(x * 128 + 64, y * 128 + 64, 0); }
     private static Fixture fixture(int x, int y, int nx, int ny, List<MovementTrace.Entry> trace)
     {

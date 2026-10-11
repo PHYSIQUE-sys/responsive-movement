@@ -4,6 +4,7 @@ import java.lang.reflect.Proxy;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import net.runelite.api.Client;
 import net.runelite.api.Model;
 import net.runelite.api.Player;
@@ -19,6 +20,44 @@ import static org.junit.Assert.*;
 /** API-double checks: the native loading renderer itself requires in-game validation. */
 public class SceneCameraTest
 {
+    @Test
+    public void horizontalFollowKeepsReferenceFeelAndEqualElapsedTimeAcrossCadences()
+    {
+        assertEquals(4.0 / 64, PresentationCamera.followFraction(4, 64, 16.667f), 1e-12);
+        assertEquals(0, PresentationCamera.followFraction(100, 1, 0), 0);
+        assertEquals(0, PresentationCamera.followFraction(0, 64, 100), 0);
+        assertEquals(1, PresentationCamera.followFraction(100, 1, 8), 0);
+        for (int cadence : new int[] {8, 20, 33, 100})
+        {
+            Fixture f = new Fixture();
+            AtomicLong now = new AtomicLong();
+            PresentationCamera camera = new PresentationCamera(f.client, new ResponsiveMovementConfig() {}, now::get);
+            LocalPoint goal = new LocalPoint(7360, 2006, 0);
+            camera.prepare(f.player, goal, false);
+            camera.afterDraw();
+            float startX = f.focus[0], startZ = f.focus[2];
+            for (int ms = cadence; ms < 1000; ms += cadence)
+            {
+                now.set(ms * 1_000_000L);
+                camera.prepare(f.player, goal, false);
+                camera.afterDraw();
+                assertEquals(0, f.mode);
+            }
+            now.set(1_000_000_000L);
+            camera.prepare(f.player, goal, false);
+            double remaining = Math.pow(1 - 4.0 / 64, 1000 / (double) 16.667f);
+            assertEquals(goal.getX() - (goal.getX() - startX) * remaining, f.focus[0], 0.15);
+            assertEquals(goal.getY() - (goal.getY() - startZ) * remaining, f.focus[2], 0.15);
+            float beforeX = f.focus[0], beforeZ = f.focus[2];
+            camera.prepare(f.player, goal, false);
+            assertEquals(beforeX, f.focus[0], 0);
+            assertEquals(beforeZ, f.focus[2], 0);
+            camera.beforeInput();
+            assertEquals(0, f.mode);
+            camera.close();
+        }
+    }
+
     @Test
     public void markerUsesOnlyTheFixedOrbAndUnregistersOnDisableAlignmentAndShutdown()
     {
