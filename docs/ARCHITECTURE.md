@@ -475,6 +475,31 @@ guards. See `agent-work/random-direction-1249/CHECKPOINT.md` for that policy's
 user confirmation. Shared Walk-click smoothing now precedes this replan; it does not
 change the collision geometry, movement time budget or hard prediction deadline.
 
+The 2026-10-12 bookmark follow-up adds `retargetAuthorityDeparture` as another
+fresh-Walk candidate. When authority belongs to the occupied proven edge/corridor,
+the new straight-first forecast can retain its authority-anchored cardinal first
+step instead of reconstructing a route from an old knight middle tile. A supporting
+one-tile square must prove both diagonals and all four perimeter edges in both
+directions. The displayed fraction joins that first step directly when contained;
+a fraction within half a tile of authority may instead cross from its occupied
+proven square to the new square through their checked shared boundary. Each queue
+subsegment retains its own proof for collision changes, cancellation and rebasing.
+No extra logical tile is added. The candidate may beat the old connector only within
+the existing one-tile travel allowance; whole checked knight handling remains first.
+All movement/forecast/deadline state and the fractional clock remain in MovementPath.
+An opposed latest goal disables borrowing the old travel tangent for a local cubic
+blend, even when a construction connector points forward. Four departure-window
+replays and geometry/lifetime guards pass with all earlier checks (**682 tests**).
+The user subsequently confirms the correction works well in-game. See
+`agent-work/bookmarks-20261012/CHECKPOINT.md` for all ten retained bookmark findings.
+The subsequent settings sweep passes the **686-test** build: all 96 speed increments
+at fixed bookmark-derived fractions with walking/running and several independent
+pacing strengths, twelve-speed captured timelines, live scene/minimap setting changes,
+and blocked-goal/expiry guards. Original click/server times remain fixed in controller
+replays; slow displays drain legitimate confirmed debt before final holding is checked.
+No additional movement implementation change was needed. This is synthetic/replay
+settings coverage, not native-renderer or every-percentage visual confirmation.
+
 The 2026-09-28 evening route corrections refine only these fresh-click
 connections. Equal max-axis travel scores use geometric distance as a tie-break,
 avoiding an unnecessary return through a knight chord's old origin. A cardinal

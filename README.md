@@ -143,9 +143,12 @@ The latest user confirmation says the plugin is working well, including the rece
 native Walk observation and startup-timing fixes, and supersedes older pending notes.
 The user also confirms the speed/camera/overhead/combat review fixes are working well.
 The user confirms the compact profiles-only sidebar is working well apart from a
-top-spacing issue. That spacing correction and trace bookmarks pass automated
-regressions and await in-game confirmation;
-see the current validation status.
+top-spacing issue. That spacing correction passes automated regressions and awaits
+visual confirmation; see the current validation status.
+The user now confirms the trace-bookmark Walk-departure correction is working well
+in-game. Its **686-test** build includes a settings sweep of every 0.1 movement-speed
+increment and multiple pacing strengths; the third marked entry was excluded as
+requested. See the validation notes for findings and bounded blocked-goal/timeout cases.
 
 ## Development
 

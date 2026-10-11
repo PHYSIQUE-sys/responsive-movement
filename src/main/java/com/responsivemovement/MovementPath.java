@@ -388,6 +388,8 @@ final class MovementPath
             if (visibleKnight != null) { return visibleKnight; }
         }
 
+        MovementPath authorityDeparture = retargetAuthorityDeparture(active, destination, run, now);
+
         // Only a fresh user click may replace an obsolete confirmed visual
         // itinerary. Authority itself remains unchanged. Ordinary reconciliation
         // and native interaction waypoints keep their confirmed-prefix guards.
@@ -442,6 +444,14 @@ final class MovementPath
                 best = next; bestDistance = length; bestGeometry = geometry;
             }
         }
+        if (authorityDeparture != null && remainingTravel(authorityDeparture) <= bestDistance + TILE)
+        {
+            // A cheaper old middle-tile anchor can manufacture a large sideways
+            // excursion just before arrival. Prefer the native authority route
+            // through its fully proven first-step square within the same existing
+            // one-tile connector allowance; blocked/long detours keep normal selection.
+            return authorityDeparture;
+        }
         if (best != null && forward != null && !best.legs.isEmpty())
         {
             LocalPoint first = best.legs.peekFirst().end;
@@ -454,6 +464,66 @@ final class MovementPath
             if (backwards < -EPS && remainingTravel(forward) <= bestDistance + TILE) { return forward; }
         }
         if (continuous != null && remainingTravel(continuous) <= bestDistance + TILE) { return continuous; }
+        return best;
+    }
+
+    /** Join a fresh Walk's cardinal departure through a fully checked local square. */
+    private MovementPath retargetAuthorityDeparture(Leg occupied, LocalPoint destination, boolean run, long now)
+    {
+        if (Math.max(Math.abs(x - confirmed.getX()), Math.abs(y - confirmed.getY())) > TILE) { return null; }
+        boolean authorityOnOccupied = occupied.corridorEnd != null
+            ? insideCheckedCorridor(occupied, confirmed.getX(), confirmed.getY())
+            : confirmed.equals(occupied.start) || confirmed.equals(occupied.end);
+        if (!authorityOnOccupied) { return null; }
+        MovementPath forecast = anticipate(confirmed, confirmed, destination, run, now, multiplier,
+            restartDeadline(now, confirmed), collision);
+        if (forecast == null || forecast.legs.isEmpty() ||
+            distance(position(), confirmed) > (forecast.forecastSteps() + 1) * TILE) { return null; }
+        Leg first = forecast.legs.peekFirst();
+        int dx = first.end.getX() - confirmed.getX(), dy = first.end.getY() - confirmed.getY();
+        if (first.corridorEnd != null || Math.abs(dx) + Math.abs(dy) != TILE) { return null; }
+        MovementPath best = null;
+        double bestTravel = Double.POSITIVE_INFINITY;
+        for (int side : new int[] {-1, 1})
+        {
+            LocalPoint corner = new LocalPoint(confirmed.getX() + (dy == 0 ? 0 : side * TILE),
+                confirmed.getY() + (dx == 0 ? 0 : side * TILE), confirmed.getWorldView());
+            if (!clearTurnSquare(corner, first.end, collision)) { continue; }
+            Leg departure = new Leg(corner, first.end, first.running, first.firstOfPair, first.end);
+            departure.headingX = departure.headingY = Double.NaN;
+            LocalPoint crossing = null;
+            if (!insideCheckedCorridor(departure, x, y))
+            {
+                // A reversal can start in the neighbouring occupied square.
+                // Cross their shared boundary only near authority, retaining a
+                // separate collision proof for each fractional subsegment.
+                if (Math.max(Math.abs(x - confirmed.getX()), Math.abs(y - confirmed.getY())) > TILE / 2.0) { continue; }
+                crossing = sharedCorridorCrossing(occupied, departure, first.end);
+                if (crossing == null) { continue; }
+            }
+            MovementPath next = joinedWalkForecast(forecast);
+            if (crossing != null)
+            {
+                Leg connector = occupied.endingAt(crossing, first.running);
+                connector.headingX = first.end.getX() - x; connector.headingY = first.end.getY() - y;
+                connector.joinPrepared = true;
+                next.legs.addLast(connector);
+            }
+            next.legs.addLast(departure);
+            boolean skip = true;
+            for (Leg leg : forecast.legs)
+            {
+                if (skip) { skip = false; } else { next.legs.addLast(leg); }
+            }
+            next.reversalPreview = true;
+            next.inheritWalkContinuity(this);
+            next.pendingWalkConfirmation();
+            double travel = remainingTravel(next);
+            if (next.legs.size() <= MAX_QUEUE && next.clear() && travel < bestTravel - EPS)
+            {
+                best = next; bestTravel = travel;
+            }
+        }
         return best;
     }
 
@@ -2093,6 +2163,8 @@ final class MovementPath
         double distance = Math.max(Math.abs(dx), Math.abs(dy));
         if (incoming < EPS || distance < 8 || tangentX * dx + tangentY * dy <= 0 ||
             Math.abs(tangentX * dy - tangentY * dx) < EPS) { return null; }
+        LocalPoint goal = clickedDestination();
+        if (goal != null && tangentX * (goal.getX() - x) + tangentY * (goal.getY() - y) <= 0) { return null; }
         // A local blend rejoins this same leg within roughly 120 ms of ordinary
         // travel. Do not bow the whole itinerary or change distant anchor choices.
         double blend = Math.min(distance, rate(leg.running) * 120);

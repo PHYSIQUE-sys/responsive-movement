@@ -16,6 +16,86 @@ Movement** plugin must be disabled; the new plugin declares that conflict.
 
 ## Current status (supersedes dated pending notes below)
 
+**2026-10-12 bookmark settings sweep: user-confirmed working well in-game; 686 tests pass.**
+The user requested checking the bookmarked correction beyond their recorded speed and
+catch-up settings. `BookmarkSettingsSweepTest` adds four matrix tests, retaining all
+682 previous checks. No additional production-code correction was needed.
+
+- **96,768 departure runs:** all **96** movement-speed increments from **0.5 to 10.0**;
+  catch-up off and on at **0/1/10/15/25/50%**; ahead slowdown off and on at **13/50%**;
+  eight bookmark-derived departure geometries; walking/running; and approximately
+  **120/50/30-FPS** cadences. These hold the captured fractional geometry fixed before
+  varying settings and check the authority route, collision proof, per-frame movement
+  budget, absence of the old side-anchor excursion, shared-square crossing and eventual
+  confirmed arrival. Walking uses synthetic one-tile server steps; running uses pairs.
+- **3,024 controller replays:** the four captured departure windows at twelve speeds
+  spanning **0.5–10.0**, including **4.9/5.0/5.1/5.3/5.4**, all seven catch-up policies,
+  all three slowdown policies and three cadences. Original click/authority times stay
+  fixed. A much slower display can legitimately owe more confirmed travel, so these
+  check budgets and final convergence/holding after that queue drains, rather than
+  requiring the recorded near-arrival fraction at every speed.
+- **72 live-change replays:** scene/minimap entry parity with the retained native
+  publications, all four windows and three cadences; minimum speed/off pacing to
+  maximum speed/50% pacing, the reverse, and **5.3/15%/13% → 5.4/10%/off**. Applying
+  settings and preparing again at the same timestamp preserves the exact displayed
+  point and spends no additional movement time.
+- **2,016 paired bound checks:** the blocked-goal and nearly exhausted-chain cases
+  across every speed and tested pacing policy. Settings cannot permit the blocked tile
+  or renew the expired forecast; actual onward authority still arrives normally.
+
+Full `.\gradlew.bat build --offline --console=plain --no-daemon` passes **686 tests,
+zero failures/ignored tests**. The four JUnit matrix methods execute the thousands of
+variants above; they are not thousands of separately counted JUnit methods. These
+checks strengthen settings coverage but do not execute RuneScape's native renderer
+or test every percentage/setting combination. The user subsequently reports the
+corrected behavior is working well in-game; see the
+[bookmark checkpoint](agent-work/bookmarks-20261012/CHECKPOINT.md#settings-sweep-follow-up)
+for scope. User confirmation still uses `.\gradlew.bat run` and
+[Using Jagex Accounts](https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts),
+with 117 HD and near-arrival scene/minimap changes at different speeds/pacing strengths.
+That visual confirmation is now reported; only the user performs gameplay.
+
+**2026-10-12 trace-bookmark Walk departures: user-confirmed working well in-game; 682 tests passed at that checkpoint.**
+Session `1791728735542` contains eleven hotkey bookmarks. The third chronologically,
+**01:26:24.423 (+11:00), sequence 2501**, is excluded at the user's request. The other
+ten markers and their preceding click/authority/route publications were reviewed.
+Several show a fresh Walk returning through an old running chord's middle tile,
+adding a sideways excursion or a return to a corner before following the new click.
+
+Fresh Walk now has a shared authority-anchored cardinal-departure candidate. A local
+square must prove both diagonals and every perimeter edge in both directions before
+the exact visible fraction can join its first logical step. A nearby reversal can
+cross the shared boundary of two separately proven squares, retaining each collision
+proof. Selection uses the existing one-tile connector allowance; logical routes,
+single-clock pacing, prediction bounds and recovery stay in MovementPath. An opposed
+new goal also prevents a local blend from borrowing the preceding click's tangent.
+
+Bookmarks 1/2/4/6/7/8/9/11 inform the geometric correction. Bookmark 5 names a
+collision-blocked Walk goal and the native client stops one tile before it; bookmark
+10 has about 16 ms left in its original hard prediction chain before a delayed
+preceding-click endpoint arrives. Their blocked-goal/expiry policies have dedicated
+guards, rather than granting unchecked travel or a renewed budget. See
+[the bookmark checkpoint](agent-work/bookmarks-20261012/CHECKPOINT.md) for each marker,
+the precise source evidence and replay limits.
+
+Four initial focused checks fail before the correction. Eleven new tests include
+four recorded departure windows at 8.333/20/33.333-ms cadences, captured-fraction
+geometry, both-direction square/collision guards, shared-boundary closure, repeated
+input/timeout, rotated/reflected layouts, rebase/authority/pacing and the two bounded
+cases. Full `.\gradlew.bat build --offline --console=plain --no-daemon` passes
+**682 tests, zero failures/ignored tests**, retaining all 671 previous checks.
+These checks do not execute the native renderer or establish in-game visual feel.
+
+User check: launch `.\gradlew.bat run` using
+[Using Jagex Accounts](https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts).
+With 117 HD, repeat near-arrival cardinal/offset departures, circle turns and short
+reversals at speed 5.3/5.4, turn 32, smoothing 0, catch-up 15%, ahead slowdown 13%,
+and Original player when aligned off. Check no unnecessary side excursion or corner
+retrace; also check minimap, walking, walls, repeated knights and final stops. Add
+another bookmark and describe the visible symptom if the blocked-goal or expired-chain
+cases remain objectionable. The user subsequently reports that the correction works well
+in-game. Only the user performs gameplay.
+
 **2026-10-11 profile-list top-spacing follow-up: implemented; 671 tests pass; awaiting confirmation of the spacing correction.**
 The user reports the compact sidebar is good, with the only reported problem being
 roughly two profile rows of empty space above their three saved profiles. The empty-state
