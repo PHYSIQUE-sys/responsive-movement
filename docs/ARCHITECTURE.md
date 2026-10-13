@@ -19,7 +19,11 @@ The retained rules include:
 - Visible-idle starts, including fully settled idle and a stopped visual preview.
 - A blocked direct click uses `MovementRoute` to find a reversible collision-checked
   detour, bounded to 64 steps and 2,048 visited tiles. Searches run for a new
-  prediction/correction, not on every rendered frame.
+  prediction/correction, not on every rendered frame. If a distant goal exceeds
+  the open-area radius of that vertex budget, the obstacle frontier is guided by
+  checked travel cost plus max-axis goal distance under the same vertex/expansion
+  limit. Local/footprint-boundary searches retain FIFO order; a clear direct click
+  retains its straight-first itinerary.
 - A mid-run click can append a preview behind a confirmed queue. The confirmed
   prefix and its sub-tile position survive replacement, timeout and disagreement;
   re-clicking without server progress cannot renew the hard prediction deadline.
@@ -59,6 +63,9 @@ The retained rules include:
 - A moving Walk forecast can have a construction origin off the actual
   authoritative route. `alignWalkAuthority` now uses a new checked one/two-tile
   forward server step to rebuild the logical route from that true-tile endpoint.
+  A fresh retarget need not be awaiting its construction origin: a preceding
+  click's forward but off-route step must also join the latest goal instead of
+  discarding that preview and idling at the older endpoint.
   It joins the exact visible fraction through its occupied reversible edge or
   checked corridor to the new forecast, preferring forward travel and shorter
   geometric joins. This avoids continuing along a parallel row/column until
@@ -118,8 +125,11 @@ The retained rules include:
 - New native object/item destinations use `retargetInteraction` to join an
   authority-anchored checked forecast from the visible fraction. Native refinements
   share `retargetApproachDestination` with ordinary NPCs, keeping original deadlines;
-  `alignApproachAuthority` shares the checked forward-authority/fractional join.
-  These reuse `joinForecast`, not an object-specific route engine. An occupied
+  `alignWalkAuthority` and `alignApproachAuthority` share checked forward-authority
+  construction through `alignForwardAuthority`, with eligibility retained at each
+  entry point. On-route approach arrivals use `accept`, not another forecast.
+  Native-preview shortening also uses shared refinement; its old trim fast path
+  has been removed. These reuse `joinForecast`, not an object-specific route engine. An occupied
   knight whose logical middle tile is confirmed may trim its obsolete tail to that
   still-forward confirmed point only inside the rechecked proven corridor. It keeps
   fractional position and all real confirmed debt. Blocked joins and unsupported
@@ -171,6 +181,9 @@ The retained rules include:
   qualify for melee pursuit; known ranged profiles now use the same target evidence
   with their checked firing-boundary policy below. Halberd/casting/unknown profiles
   keep their existing positional reserve and can retain stationary target facing.
+  An owned conservative attack with an onward native flag can share the existing
+  confirmed-run endpoint reserve between pairs. This grants no extra speculative
+  tile and releases on input, actions/effects, native arrival or flag withdrawal.
   `NpcApproach.refreshCombat` reads the clicked NPC directly, accepts only bounded
   one/two-tile footprint changes on the same view/plane/identity/size, and publishes
   a new immutable footprint. A pending click expires without native engagement;
@@ -183,6 +196,15 @@ The retained rules include:
   credit until the NPC actually moves. NPC motion alone cannot renew an outstanding
   response/chain deadline or increase the forecast gap. The same checked authority
   join handles off-route melee progress, including during a real native hit pose.
+  Revised target joins use direction from the visible fraction to the actual goal,
+  so they do not finish a superseded speculative endpoint when the goal is behind
+  the display. A new Attack can arm a completed recovery as an idle start; an
+  unfinished/invalid correction retains its recovery handling.
+  Cold one-tile melee forecasts retain their native walking gait and share the
+  existing close-start exponential reserve until player authority arrives. A real
+  target step observed during an unfinished combat correction stays pending under
+  the original deadlines and is retried once reconciled. Blocked/expired attempts
+  are consumed; adjacency still holds position without inventing another step.
   Stationary target observation creates no new positional itinerary. Failed or
   expired previews use normal checked recovery; unfinished confirmed prefixes
   remain protected. Melee facing uses the displayed travel/target geometry under
@@ -728,7 +750,7 @@ fallback described above is separate, explicit provisional target evidence.
 
 Scene Walk clicks (including right-click Walk here) and minimap presses share the
 `clickSmoothingMs` settling window, default 50 ms and clamped to 0–300 ms. Its UI
-label is now **Walk-click smoothing (ms)**; the persisted key/group are retained. Input
+label is now **Movement delay**; the persisted key/group are retained. Input
 observation starts immediately; previews are released after the window measured
 from native click observation, not after an additional wait following destination publication.
 The first new native destination for each click is latched during that window:
@@ -788,7 +810,7 @@ shutdown waits are introduced. Supported ConfigManager writes update the same
 persisted keys read by the live plugin. Native settings-panel controls are not
 modified through reflection or UI-tree inspection.
 
-`MovementSettings` lists 31 typed movement/appearance settings for profiles and the
+`MovementSettings` lists 37 typed movement/appearance settings for profiles and the
 three independent debugging controls for bookmark evidence. `MovementProfiles`
 reads/validates the retained schema-1 JSON under `savedMovementProfiles` and
 `selectedMovementProfile` in the existing group, preserving earlier saves. Load
@@ -797,6 +819,16 @@ unknown/debugging keys are not applied. Same-name save updates the entry. Delete
 preserves other saves and clears the last-loaded name only if that save was deleted.
 The UI's action/confirmation/notice checks and backend/live-clock checks pass; native
 visual presentation of the panel still requires the user's check.
+`MovementPresets` publishes immutable **Default** and **True Tile** snapshots without
+filesystem reads or startup setting writes. Default comes from the config interface;
+True Tile retains the user's exact saved scalar values, with future keys filled from
+plugin defaults. `MovementProfiles` merges these into the displayed/loadable list,
+giving case-insensitive saved-name collisions precedence without rewriting saved JSON.
+Only personal overrides count toward the 64-save limit. Saving a preset name creates
+an override; deleting it reveals the preset. The sidebar supplies the saved-name set
+to the panel so built-in rows remain loadable while Delete is enabled only for saves.
+Listing/selection never applies a preset; Load still uses the guarded client-thread
+batch, leaves debugging independent and preserves the live movement clock.
 **Debugging** remains the final native settings section, retaining `explainStarts`
 and `recordTrace` and adding `traceBookmarkKey`.
 
@@ -872,9 +904,10 @@ to a newly confirmed forward true-tile endpoint. `clickAction=WALK` and
 movement policies.
 Older captures used `started-reversal` for the narrow reversal handler and
 `redirected` for a bounded preview redirect.
-Native interaction endpoint changes use `trimmed-native-approach` when the new
-tile is on the forecast, `redirected-native-approach` for a checked connector,
-or `native-approach-recovery` when neither is possible.
+Native interaction endpoint changes use `redirected-native-approach` for shared
+refinement/checked connectors, including on-route shortening, or
+`native-approach-recovery` when a legal refinement is unavailable. Older captures
+used `trimmed-native-approach` for the removed on-route clipping fast path.
 Each sample also carries whether a continuation was currently available, whether
 a click observation is still pending and its age, and whether a spot animation is
 active, so a deferred start or a red-click approach can be told apart from input

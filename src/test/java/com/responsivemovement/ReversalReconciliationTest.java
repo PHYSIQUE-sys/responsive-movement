@@ -22,7 +22,7 @@ public class ReversalReconciliationTest
             0, 1, MovementPath.freshDeadline(0), (a, b) -> true);
         advance(west, 0, 560);
         assertEquals(point(6624), west.position());
-        MovementPath east = west.anticipateReversal(point(7232), true, 560_000_000L);
+        MovementPath east = west.retargetWalk(point(7232), true, 560_000_000L);
         assertNotNull(east);
         assertTrue(east.accept(point(6848), true));
         assertEquals("preview", east.phase());
@@ -51,7 +51,7 @@ public class ReversalReconciliationTest
             0, 1, MovementPath.freshDeadline(0), (a, b) -> true);
         advance(west, 0, 620);
         assertEquals(point(6472), west.position());
-        MovementPath east = west.anticipateReversal(point(7232), true, 620_000_000L);
+        MovementPath east = west.retargetWalk(point(7232), true, 620_000_000L);
         assertNotNull(east);
         for (int ms = 630; ms <= 1300; ms += 10)
         {
@@ -89,7 +89,7 @@ public class ReversalReconciliationTest
             if (tick < ticks.length && ms == ticks[tick]) { assertTrue(path.accept(point(endpoints[tick++]), true)); }
             if (click < clicks.length && ms == clicks[click])
             {
-                MovementPath next = path.anticipateReversal(point(destinations[click++]), true, ms * 1_000_000L);
+                MovementPath next = path.retargetWalk(point(destinations[click++]), true, ms * 1_000_000L);
                 assertNotNull(next);
                 path = next;
             }
@@ -113,7 +113,7 @@ public class ReversalReconciliationTest
         assertTrue(west.accept(point(5824), true));
         advance(west, 0, 220);
         assertEquals(point(6248), west.position());
-        MovementPath east = west.anticipateReversal(point(6976), true, 220_000_000L);
+        MovementPath east = west.retargetWalk(point(6976), true, 220_000_000L);
         assertNotNull(east);
         advance(east, 220, 600);
         assertEquals(point(6336), east.position());
@@ -127,7 +127,7 @@ public class ReversalReconciliationTest
         MovementPath west = MovementPath.anticipate(point(6848), point(7104), point(6336), true,
             0, 1, MovementPath.freshDeadline(0), (a, b) -> true);
         advance(west, 0, 560);
-        MovementPath east = west.anticipateReversal(point(7232), true, 560_000_000L);
+        MovementPath east = west.retargetWalk(point(7232), true, 560_000_000L);
         assertNotNull(east);
         assertTrue(east.accept(point(6848), true));
         advance(east, 560, 1000);
@@ -147,7 +147,7 @@ public class ReversalReconciliationTest
         MovementPath west = MovementPath.anticipate(point(6720), point(6720), point(6208), true,
             0, 1, MovementPath.freshDeadline(0), (a, b) -> true);
         advance(west, 0, 620);
-        MovementPath east = west.anticipateReversal(point(7232), true, 620_000_000L);
+        MovementPath east = west.retargetWalk(point(7232), true, 620_000_000L);
         assertNotNull(east);
         assertTrue(east.accept(point(6464), true));
         advance(east, 620, 700);
@@ -171,7 +171,7 @@ public class ReversalReconciliationTest
         MovementPath path = MovementPath.anticipate(north, north, south, true, 0, 1,
             MovementPath.freshDeadline(0), (a, b) -> true);
         advance(path, 0, 620);
-        path = path.anticipateReversal(new LocalPoint(9024, 7232, 0), true, 620_000_000L);
+        path = path.retargetWalk(new LocalPoint(9024, 7232, 0), true, 620_000_000L);
         assertNotNull(path);
         assertTrue(path.accept(new LocalPoint(9024, 6464, 0), true));
         int before = path.position().getY();

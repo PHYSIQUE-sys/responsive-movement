@@ -140,6 +140,27 @@ public class InteractionContinuityGuardTest
     }
 
     @Test
+    public void onRouteApproachArrivalUsesAcceptanceWithoutRebuildingOrResettingItsFraction()
+    {
+        LocalPoint goal = p(5056, 3904);
+        MovementPath path = MovementPath.anticipate(p(5312, 4032), p(5312, 3904), goal, true,
+            0, 1, MovementPath.freshDeadline(0), OPEN);
+        assertNotNull(path);
+        path.advance(100_000_000L);
+        LocalPoint before = path.position();
+        long hard = path.predictionDeadlineNanos();
+        assertNull(path.alignApproachAuthority(goal, true, 100_000_000L));
+        assertEquals(before, path.position());
+        assertEquals(hard, path.predictionDeadlineNanos());
+        assertTrue(path.accept(goal, true));
+        assertEquals(before, path.position());
+        for (int ms = 120; ms <= 1400; ms += 20) { path.advance(ms * 1_000_000L); }
+        assertEquals(goal, path.position());
+        assertTrue(path.finished());
+        assertTrue(path.clear());
+    }
+
+    @Test
     public void confirmedRunTailIsCadenceIndependentAndNeverLeavesItsCheckedKnight()
     {
         LocalPoint start = p(6592, 3136), endpoint = p(6848, 3008);

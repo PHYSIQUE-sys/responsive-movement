@@ -87,9 +87,7 @@ final class NpcApproach
     {
         // Capture only this clicked target's supported cache actions, once.
         // Neither an NPC-name/ID table nor a scene-wide service lookup is needed.
-        NPCComposition composition = npc.getTransformedComposition();
-        if (composition == null) { composition = npc.getComposition(); }
-        String[] actions = composition == null ? null : composition.getActions();
+        String[] actions = nativeActions(npc);
         if (actions == null) { return false; }
         for (String action : actions)
         {
@@ -101,15 +99,20 @@ final class NpcApproach
     static boolean attackable(NPC npc)
     {
         if (npc == null || npc.isDead()) { return false; }
-        NPCComposition composition = npc.getTransformedComposition();
-        if (composition == null) { composition = npc.getComposition(); }
-        String[] actions = composition == null ? null : composition.getActions();
+        String[] actions = nativeActions(npc);
         if (actions == null) { return false; }
         for (String action : actions)
         {
             if (action != null && "Attack".equalsIgnoreCase(action.trim())) { return true; }
         }
         return false;
+    }
+
+    private static String[] nativeActions(NPC npc)
+    {
+        NPCComposition composition = npc.getTransformedComposition();
+        if (composition == null) { composition = npc.getComposition(); }
+        return composition == null ? null : composition.getActions();
     }
 
     boolean valid(WorldView current)

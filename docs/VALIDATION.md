@@ -16,6 +16,190 @@ Movement** plugin must be disabled; the new plugin declares that conflict.
 
 ## Current status (supersedes dated pending notes below)
 
+**2026-10-14 bundled movement profiles: implemented; awaiting sidebar confirmation.**
+The profiles list now includes **Default** and the user's saved **True Tile**
+snapshot. True Tile uses speed 5.9, arrival first length 0.2 / speed 50%, final
+length 1 / speed 49.8%, and the saved facing, true-tile, camera and overhead values.
+It is an explicitly loaded preset, not a native-rendering profile or startup default.
+Existing case-insensitive same-name saves own their rows and are preserved. Saving
+a bundled name creates an override; deleting the override restores the built-in row.
+Bundled rows do not use personal save slots and cannot be deleted from the bundle.
+
+Backend and real-sidebar regressions cover fresh lists with no writes, complete
+validated preset snapshots, explicit loading, Default restoration, debugging
+independence, same-name precedence, override save/delete and the 64-save limit.
+Launch `.\gradlew.bat run` with the development-login guide above. Check both list
+entries, load True Tile on a fresh RuneLite configuration profile, compare its
+movement/appearance with the saved version, then load Default. Check that selecting
+a row alone does not apply it and an existing True Tile save still loads its own
+values. Only the user performs gameplay; sidebar/in-game confirmation is pending.
+
+**2026-10-13 customizable arrival slowdown: user-confirmed; tuned defaults and settings sweep pass.**
+The user reports the customizable approach is working really well and selected
+first length **0.2 tiles**, first speed **50%**, final length **1 tile**, final speed
+**49.7%** as the cleanest settings. These are now the defaults. Both stages
+have independent fractional tile lengths and target speeds, measured against
+normal displayed walk/run pace. Zero length skips a stage; oversized lengths
+scale together to fit a trip. Only trips of at least three logical tile steps
+qualify, with diagonal steps counted as one tile. Short movements match the
+arrival option being off. This is total trip length, rather than a three-tile
+wait before starting the approach. Speeds remain continuous across both ramps,
+and the configured pace selects the existing native walk pose at walking speed.
+Arrival still completes exactly at the tile centre on MovementPath's clock and
+checked route. Intermediate queue boundaries, combat reserves and rejection
+recovery retain their pacing. New controls are included in profile saves and
+diagnostic snapshots; legacy arrival keys are retained with explicit profile conversion.
+
+Arrival regressions cover the one/two/three-tile threshold in all cardinal and
+diagonal directions for confirmed and preview routes; independent speed/length
+controls; fractional/skipped/scaled stages at multiple cadences; confirmed-only
+walking across queue gaps; fresh short trips after longer trips; five-tile
+walks/runs; redirects; catch-up/ahead pacing; rejection recovery; scene/minimap
+live toggles; and legacy-profile conversion/validation.
+The settings sweep checks **2,500 stage/rate combinations** (including tiny,
+skipped and oversized lengths, equal/reversed speeds and numeric limits), plus
+**1,404 confirmed/preview movement replays** across movement speed 0.5/5/10,
+walking/running, short/diagonal/knight/corner routes, catch-up 0/15/50%, ahead
+slowdown 0/13/50% and frame cadences 8/20/33/100 ms. Integration is finite,
+arrivals are exact, and short trips match the option being off. New unset defaults
+are distinguished from saved legacy arrival choices; profile conversion remains covered.
+`.\gradlew.bat test --console=plain`
+passes, as does `git diff --check`.
+
+Launch `.\gradlew.bat run` with the development-login guide above. Enable
+**Slow down on arrival** with its default stage settings and
+**Show true tile → Server true tile**. Compare two-tile and three-tile straight
+and diagonal moves: only the three-tile trips should ease. Try five-tile walks/runs,
+then change each stage independently (for example, first 1.5 tiles / 60%, final
+0.75 tiles / 30%). Recheck scene/minimap clicks, skipped stages, redirects and
+obstacle corners. Check for a visible earlier approach, a smoothly slower finish,
+true-tile alignment and no pauses at intermediate route points.
+Only the user performs gameplay; runtime confirmation is pending.
+
+**2026-10-13 close-melee startup refinement: implemented; 705 tests pass; awaiting in-game confirmation.**
+The user clarified that #38255 mainly marked the brief forward/back startup nudge,
+with the following pause also noticeable. Cold one-tile melee starts now retain
+the native one-step walking gait and use the shared close-start exponential
+reserve. Actual player authority releases the easing. An observed NPC step that
+arrives during correction is kept pending until the path settles, then retried
+within the same response/chain deadlines. Blocked/expired attempts and the hold
+while the NPC is already in reach retain their bounds.
+
+Five new regressions exercise the bookmarked close starts at three frame cadences,
+confirmation, bounded retry, already-adjacent holding and blocked/expired movement.
+Full `.\gradlew.bat build --offline --console=plain --no-daemon` passes **705 tests,
+zero failures/ignored tests**; `git diff --check` passes. See
+[the follow-up checkpoint](agent-work/bookmarks-20261013-0109/CHECKPOINT.md).
+
+Launch `.\gradlew.bat run` using
+[Using Jagex Accounts](https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts).
+Recheck a close melee target moving into reach and away again, the startup nudge,
+restart timing and normal longer moving-NPC approaches. Start with speed 5.3,
+catch-up 15% and ahead slowdown 13%, as in these captures. Only the user performs
+gameplay; runtime confirmation is pending.
+
+**2026-10-13 01:09–01:14 bookmark review: moving-NPC improvement user-confirmed; three further captures reviewed.**
+The user reports that the previous changes are definitely better for moving NPCs.
+The new Walk bookmark #21240 shows a continuous checked join and arrival. Attack
+bookmarks #26055 and #38255 show close unconfirmed starts being withdrawn when the
+NPC moves into reach of unchanged player authority. In #38255 the display makes a
+small eastward nudge, returns to `(6976,6080)` while the target is adjacent, then
+completes the later confirmed eastward step. The marker is the **01:14 system
+submission for #38255**, recorded at 01:14:59.305 +11:00.
+
+The initial review recorded evidence against the **700-test** source baseline.
+The user subsequently identified the startup nudge and following pause; the
+refinement above responds to that clarification. See
+[the follow-up review](agent-work/bookmarks-20261013-0109/CHECKPOINT.md) for the three
+timelines and the distinction between a valid recovery and the earlier routing bugs.
+
+**2026-10-12 23:10–23:29 bookmarked follow-up: implemented; 700 tests pass; user confirms moving-NPC improvement.**
+Reviewed 13 bookmarks across two recorded sessions. Accessible Walk windows show
+old off-route forward server steps discarding fresh forecasts and causing roughly
+298–541-ms waits. Moving melee joins can finish a superseded speculative leg before
+returning to the updated approach side; a completed recovery can also block a fresh
+Attack until another server step. The long minimap detour exhausts the radial search
+and falls back to confirmed-only travel with recurrent endpoint braking. Later
+conservative-profile attacks publish idle between native pairs despite an onward flag.
+
+The fixes retain the latest Walk through checked off-route forward alignment, steer
+moving combat joins toward the goal from the visible fraction, allow new Attack
+starts from reconciled recovery, guide distant obstacle searches within the original
+route/vertex bounds, and share the existing confirmed-run reserve for an eligible
+conservative attack's onward native flag. Seven new regressions bring the full build
+to **700 tests, zero failures/ignored tests**. A temporary full-collision-map minimap
+replay also passed; portable fixtures label their synthetic geometry explicitly.
+See [the bookmarked checkpoint](agent-work/bookmarks-20261012-2310/CHECKPOINT.md)
+for timestamps, evidence limits and the remaining native-action/reach boundaries.
+
+Launch `.\gradlew.bat run` using
+[Using Jagex Accounts](https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts).
+Recheck the delayed scene/minimap direction changes, moving-NPC melee attacks,
+Attack after a finished correction, the long minimap run and extended-reach attack
+approaches at speed 5.5 / catch-up 15% / ahead slowdown 13%. Bookmark any remaining
+idle, backstep or overshoot. Only the user performs gameplay. Moving-NPC behavior
+is now user-confirmed improved; the newer close-start captures are reviewed above.
+
+**2026-10-12 special-case/alignment cleanup: implemented; 693 tests pass; awaiting runtime confirmation.**
+Removed the unreachable arrival forecast in `alignApproachAuthority()` and shared
+Walk/scene forward-authority construction through `alignForwardAuthority()` with
+their existing eligibility checks. Migrated the captured native tree-stop regression
+to shared refinement, added six native-shortening tests and removed `trimPreviewTo()`
+and its controller shortcut. One new arrival-acceptance guard brings the suite from
+686 to **693 tests**, retaining every previous test method. The follow-up removes
+43 net production lines. See [the cleanup review](CODE-CLEANUP.md#follow-up-special-case-and-alignment-cleanup).
+
+Full `.\gradlew.bat build --offline --console=plain --no-daemon` and
+`git diff --check` pass. Tests cover walking/running native refinements, queued
+confirmed legs/corners, run-pair grouping, NPC staging, collision rejection,
+unchanged refinement deadlines and bounded timeout recovery. The full settings sweep
+and interaction/NPC/combat/lifecycle suites also pass.
+
+Launch `.\gradlew.bat run` using
+[Using Jagex Accounts](https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts).
+Recheck tree/object and ground-item approaches whose native endpoint shortens while
+moving, NPC approach refinements, walking/running through confirmed corners, and
+rapid Walk/scene replacements at your usual pacing settings. Watch for overshoot,
+backsteps, snapping or an intermediate idle stop. Only the user performs gameplay;
+runtime confirmation of this follow-up is pending.
+
+**2026-10-12 historical reversal cleanup: user-confirmed working well in-game; 686 tests pass.**
+Removed the test-only `MovementPath.anticipateReversal()` algorithm after migrating
+its useful regressions to the production `retargetWalk()` entry point. Six test
+classes now exercise current Walk behavior without the historical baseline; no test
+method was removed. Collision checks, exact fractional starts, stale-server-update
+handling, prediction bounds and timeout recovery remain covered. The short-diagonal
+return also checks that a click to the already-true goal remains pending until its
+response deadline without fresh authority. `anticipateRedirect()` continues to handle
+native interaction refinements. See [the cleanup review](CODE-CLEANUP.md).
+
+Full `.\gradlew.bat build --offline --console=plain --no-daemon` passes **686 tests,
+zero failures/ignored tests**; `git diff --check` passes. Launch `.\gradlew.bat run`
+using [Using Jagex Accounts](https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts).
+The user reports that the cleanup is working well in their tested in-game situations.
+Only the user performs gameplay.
+
+The subsequent special-case/alignment cleanup above implements the reviewed
+arrival, alignment and native-preview-shortening candidates.
+
+**2026-10-12 unused-code/duplicate-handling cleanup: implemented; 686 tests pass; awaiting runtime confirmation of the cleanup.**
+The review removes four unused presentation/profile members and consolidates repeated
+owner resets, input expiry checks, stale-authority forecast clipping, NPC composition
+lookup, native alignment evaluation and speed normalization. Redundant effect cleanup
+and duplicate trace-coordinate storage are removed. The production reduction is 29 net
+lines; policy gates and data schemas retain their existing behavior. No test method is
+removed. The native-refinement redirect remains active. See [the cleanup review](CODE-CLEANUP.md)
+and the subsequent historical reversal cleanup above.
+
+Full `.\gradlew.bat build --offline --console=plain --no-daemon` passes **686 tests,
+zero failures/ignored tests**, including the settings sweep. The preceding correction's
+in-game confirmation remains the baseline; the cleanup itself awaits a user check.
+Launch `.\gradlew.bat run` using
+[Using Jagex Accounts](https://github.com/runelite/runelite/wiki/Using-Jagex-Accounts).
+Recheck scene/minimap changes at different speeds/pacing strengths, interaction and
+combat/Follow handoffs, region/teleport/plugin lifecycle, native body/effects, profile
+operations and trace/bookmark output. Only the user performs gameplay.
+
 **2026-10-12 bookmark settings sweep: user-confirmed working well in-game; 686 tests pass.**
 The user requested checking the bookmarked correction beyond their recorded speed and
 catch-up settings. `BookmarkSettingsSweepTest` adds four matrix tests, retaining all

@@ -30,7 +30,7 @@ public class MovementProfilesTest
         assertEquals("NATIVE_MOVEMENT_TILES", f.values.get("trueTileMode"));
         assertEquals("true", f.values.get("recordTrace"));
         assertEquals("true", f.values.get("explainStarts"));
-        assertEquals(31, new MovementSettings(f.config).capture(false).size());
+        assertEquals(37, new MovementSettings(f.config).capture(false).size());
     }
 
     @Test
@@ -45,8 +45,7 @@ public class MovementProfilesTest
         assertEquals("6.1", f.values.get("movementSpeed"));
         f.profiles.save("Another");
         assertEquals(java.util.List.of("Another", "My profile"), f.profiles.names());
-        f.profiles.selectCurrentSettings();
-        assertEquals("", f.profiles.selected());
+        assertEquals("Another", f.profiles.selected());
         assertEquals(2, f.profiles.names().size());
     }
 
@@ -194,6 +193,43 @@ public class MovementProfilesTest
         }
     }
 
+    @Test
+    public void stageControlsRoundTripAndLegacyArrivalProfilesSupplyCompatibleSpeeds()
+    {
+        MovementSettings settings = new MovementSettings(new ResponsiveMovementConfig() {
+            @Override public double arrivalFirstTiles() { return 1.25; }
+            @Override public double arrivalFinalTiles() { return 0.75; }
+            @Override public double arrivalFirstSpeed() { return 60; }
+            @Override public double arrivalFinalSpeed() { return 30; }
+        });
+        Map<String, String> values = settings.validatedProfile(settings.capture(false));
+        assertEquals("1.25", values.get("arrivalFirstTiles"));
+        assertEquals("0.75", values.get("arrivalFinalTiles"));
+        assertEquals("60.0", values.get("arrivalFirstSpeed"));
+        assertEquals("30.0", values.get("arrivalFinalSpeed"));
+        Map<String, String> old = settings.validatedProfile(Map.of("slowArrivalPercent", "40"));
+        assertEquals("50.0", old.get("arrivalFirstSpeed"));
+        assertEquals("30.0", old.get("arrivalFinalSpeed"));
+        old = settings.validatedProfile(Map.of("slowArrivalPercent", "0"));
+        assertEquals("100.0", old.get("arrivalFirstSpeed"));
+        assertEquals("100.0", old.get("arrivalFinalSpeed"));
+        assertEquals("1.0", old.get("arrivalFirstTiles"));
+        old = settings.validatedProfile(Map.of("slowArrivalPercent", "-1"));
+        assertEquals("0.2", old.get("arrivalFirstTiles"));
+        assertEquals("49.7", old.get("arrivalFinalSpeed"));
+        ResponsiveMovementConfig legacy = new ResponsiveMovementConfig() {
+            @Override public int slowArrivalPercent() { return 40; }
+        };
+        assertEquals(30, legacy.arrivalFinalSpeed(), 0);
+        assertEquals("30.0", new MovementSettings(legacy).capture(false).get("arrivalFinalSpeed"));
+        for (String key : new String[] {"arrivalFirstTiles", "arrivalFinalTiles", "arrivalFirstSpeed", "arrivalFinalSpeed"})
+        {
+            assertThrows(IllegalArgumentException.class, () -> settings.validatedProfile(Map.of(key, "NaN")));
+            assertThrows(IllegalArgumentException.class, () -> settings.validatedProfile(Map.of(key, "-1")));
+            assertThrows(IllegalArgumentException.class, () -> settings.validatedProfile(Map.of(key, "101")));
+        }
+    }
+
     static final class Fixture
     {
         final Map<String, String> values = new HashMap<>();
@@ -207,6 +243,13 @@ public class MovementProfilesTest
             @Override public String get(String key) { return values.get(key); }
             @Override public void set(String key, String value) { values.put(key, value); }
         };
-        final MovementProfiles profiles = new MovementProfiles(store, new MovementSettings(config));
+        final MovementProfiles profiles;
+
+        Fixture() { this(false); }
+        Fixture(boolean bundled)
+        {
+            profiles = bundled ? new MovementProfiles(store, new MovementSettings(config)) :
+                new MovementProfiles(store, new MovementSettings(config), Map.of());
+        }
     }
 }

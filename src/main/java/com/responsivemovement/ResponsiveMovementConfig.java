@@ -62,8 +62,8 @@ public interface ResponsiveMovementConfig extends Config
         description = "Mark a moment in an active movement trace. Recording must be enabled; the key is observed without consuming game input", section = DEBUGGING)
     default Keybind traceBookmarkKey() { return Keybind.NOT_SET; }
 
-    @ConfigItem(keyName = "clickSmoothingMs", name = "Walk-click smoothing (ms)", position = 7,
-        description = "Wait up to 0–300 ms after a scene or minimap Walk click. When above 0, the next game tick ends the wait early. 0 disables the wait; native movement continues normally", section = MOVEMENT)
+    @ConfigItem(keyName = "clickSmoothingMs", name = "Movement delay", position = 7,
+        description = "will wait desired ms to move unless a new tick passes before the desired number, set to 150 to feel more like the regular game", section = MOVEMENT)
     @Range(min = 0, max = 300)
     default int clickSmoothingMs() { return 50; }
 
@@ -88,6 +88,36 @@ public interface ResponsiveMovementConfig extends Config
         description = "Maximum displayed speed reduction (0–50%). Builds over the first tile ahead; 0 disables slowdown", section = PACING)
     @Range(min = 0, max = 50)
     default int slowAheadPercent() { return 10; }
+
+    @ConfigItem(keyName = "slowArrival", name = "Slow down on arrival", position = 4,
+        description = "Two configurable arrival stages for trips of at least three tiles, including diagonal steps. Displayed movement only", section = PACING)
+    default boolean slowArrival() { return false; }
+
+    @ConfigItem(keyName = "slowArrivalPercent", name = "Legacy arrival slowdown (%)", position = 9, hidden = true,
+        description = "Retained for older settings/profiles; supplies defaults until the new stage speeds are saved", section = PACING)
+    @Range(min = -1, max = 50)
+    // -1 distinguishes the new defaults from an explicitly stored legacy choice.
+    default int slowArrivalPercent() { return -1; }
+
+    @ConfigItem(keyName = "arrivalFirstTiles", name = "First slowdown length (tiles)", position = 5,
+        description = "Length of the first speed ramp before the final stage (0–10 tiles). Diagonal steps count as one tile; 0 skips this stage", section = PACING)
+    default double arrivalFirstTiles() { return 0.2; }
+
+    @ConfigItem(keyName = "arrivalFirstSpeed", name = "First slowdown speed (%)", position = 6,
+        description = "Speed reached at the end of the first stage, as a percentage of normal displayed walk/run speed (1–100)", section = PACING)
+    default double arrivalFirstSpeed() { return slowArrivalPercent() == 0 ? 100 : 50; }
+
+    @ConfigItem(keyName = "arrivalFinalTiles", name = "Final slowdown length (tiles)", position = 7,
+        description = "Length of the final speed ramp ending at the destination (0–10 tiles). 0 skips this stage; long stages scale together to fit the trip", section = PACING)
+    default double arrivalFinalTiles() { return 1; }
+
+    @ConfigItem(keyName = "arrivalFinalSpeed", name = "Final slowdown speed (%)", position = 8,
+        description = "Speed reached at arrival, independently as a percentage of normal displayed walk/run speed (1–100). Use a lower value than the first speed for a slower finish", section = PACING)
+    default double arrivalFinalSpeed()
+    {
+        int legacy = slowArrivalPercent();
+        return legacy < 0 ? 49.7 : legacy == 0 ? 100 : 50 * (1 - legacy / 100.0);
+    }
 
     @ConfigItem(keyName = "showTrueTile", name = "Show true tile", position = 0,
         description = "Highlight the real server tile independently of the plugin's displayed player", section = TRUE_TILE)

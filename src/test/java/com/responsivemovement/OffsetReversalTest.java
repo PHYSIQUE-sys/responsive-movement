@@ -29,7 +29,7 @@ public class OffsetReversalTest
             assertNotNull(west);
             advance(west, 0, 400);
             assertEquals(point(6816, 5568, transpose), west.position());
-            MovementPath east = west.anticipateReversal(point(7232, 5568, transpose), true, 400_000_000L);
+            MovementPath east = west.retargetWalk(point(7232, 5568, transpose), true, 400_000_000L);
             assertNotNull("capture cycle 61814 must not wait for the old forecast", east);
             assertEquals(west.position(), east.position());
             advance(east, 400, 420);
@@ -57,7 +57,9 @@ public class OffsetReversalTest
             point(6336, 5568, false), true, 0, 1, MovementPath.freshDeadline(0), rows);
         assertNotNull(west);
         advance(west, 0, 400);
-        assertNull(west.anticipateReversal(point(7232, 5568, false), true, 400_000_000L));
+        LocalPoint before = west.position();
+        assertNull(west.retargetWalk(point(7232, 5568, false), true, 400_000_000L));
+        assertEquals(before, west.position());
     }
 
     @Test
@@ -67,7 +69,7 @@ public class OffsetReversalTest
         MovementPath west = MovementPath.anticipate(point(6976, 5568, false), authority,
             point(6336, 5568, false), true, 0, 1, MovementPath.freshDeadline(0), (a, b) -> true);
         advance(west, 0, 400);
-        MovementPath east = west.anticipateReversal(point(7232, 5568, false), true, 400_000_000L);
+        MovementPath east = west.retargetWalk(point(7232, 5568, false), true, 400_000_000L);
         assertNotNull(east);
         for (int ms = 410; ms <= 4000; ms += 10)
         {

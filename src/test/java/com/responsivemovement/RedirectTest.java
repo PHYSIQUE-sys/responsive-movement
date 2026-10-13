@@ -7,8 +7,8 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 /**
- * Bounded redirect of an unconfirmed preview for a newly observed yellow click
- * that is neither an exact reversal nor an appendable continuation.
+ * Bounded redirect of an unconfirmed preview for native interaction refinements,
+ * plus coverage of the fresh Walk entry point on the same captured geometry.
  *
  * Geometry mirrors the recorded 19:54:27 route: a running westbound preview
  * (7360,7488) -> (6720,7360), authority confirmed at (7104,7488), the visible
@@ -47,17 +47,22 @@ public class RedirectTest
     private static LocalPoint nearBehind() { return point(7104, 7360); }
 
     @Test
-    public void capturedNonCollinearClickCannotUseTheReversalFastPath()
+    public void capturedNonCollinearWalkRetargetReplacesTheStalePreview()
     {
-        // Documents the pre-fix captured failure: the fast reversal declines and
-        // the unconfirmed westbound preview keeps carrying the player away.
         MovementPath path = capturedWestboundPreview(OPEN);
-        assertNull(path.anticipateReversal(behind(), true, 740_000_000L));
         assertFalse(path.canAnticipateContinuation());
-        long before = distance(path.position(), behind());
+        LocalPoint before = path.position();
+        MovementPath next = path.retargetWalk(behind(), true, 740_000_000L);
+        assertNotNull(next);
+        assertEquals(before, next.position());
+        assertEquals(path.confirmed(), next.confirmed());
+        assertEquals(path.predictionDeadlineNanos(), next.predictionDeadlineNanos());
+        advance(next, 740, 940);
+        assertTrue("fresh Walk must turn toward the new click", distance(next.position(), behind()) < distance(before, behind()));
+        assertTrue(next.clear());
         advance(path, 740, 940);
-        assertTrue("stale preview must keep moving away before the fix",
-            distance(path.position(), behind()) > before);
+        assertTrue("building a retarget leaves the original itinerary intact",
+            distance(path.position(), behind()) > distance(before, behind()));
     }
 
     @Test
@@ -332,7 +337,7 @@ public class RedirectTest
     }
 
     @Test
-    public void updatedNativeTreeEndpointTrimsTheRemainingPreviewWithoutReversing()
+    public void updatedNativeTreeEndpointShortensThroughSharedRefinementWithoutReversing()
     {
         // 20:55:46–48: native route stops diagonally beside the tree at
         // (6592,7744), while the original forecast would go west to (6464,7744).
@@ -356,9 +361,8 @@ public class RedirectTest
         assertTrue(path.accept(point(6592, 7360), true));
         LocalPoint before = path.position();
         long deadline = path.predictionDeadlineNanos();
-        assertTrue("phase=" + path.phase() + " position=" + path.position() +
-            " confirmed=" + path.confirmed() + " clicked=" + path.clickedDestination() +
-            " legs=" + path.queuedLegs(), path.trimPreviewTo(approach));
+        path = path.retargetApproachDestination(approach, true, 600_000_000L, true);
+        assertNotNull(path);
         assertEquals(before, path.position());
         assertEquals(deadline, path.predictionDeadlineNanos());
         assertEquals(approach, path.clickedDestination());

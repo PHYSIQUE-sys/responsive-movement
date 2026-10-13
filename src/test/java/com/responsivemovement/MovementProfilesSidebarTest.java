@@ -215,6 +215,42 @@ public class MovementProfilesSidebarTest
         finally { f.close(); }
     }
 
+    @Test
+    public void bundledRowsLoadOnlyOnRequestAndSavedOverridesCanBeDeleted() throws Exception
+    {
+        Fixture f = new Fixture(true);
+        try
+        {
+            SwingUtilities.invokeAndWait(() -> {
+                f.panel.refresh(f.saved.profiles.names(), "", null, f.saved.profiles.savedNames());
+                f.list().setSelectedValue("True Tile", false);
+                assertTrue(f.saved.values.isEmpty());
+                assertTrue(f.button("Load").isEnabled());
+                assertFalse(f.button("Delete").isEnabled());
+                f.button("Load").doClick();
+                assertTrue(f.saved.values.isEmpty());
+            });
+            f.runTasks();
+            assertEquals("True Tile", f.saved.profiles.selected());
+            assertEquals("49.800000000000004", f.saved.values.get("arrivalFinalSpeed"));
+            f.dialogs.saveName = "True Tile";
+            SwingUtilities.invokeAndWait(() -> f.button("Save").doClick());
+            f.runTasks();
+            SwingUtilities.invokeAndWait(() -> assertTrue(f.button("Delete").isEnabled()));
+            f.dialogs.confirmDelete = true;
+            SwingUtilities.invokeAndWait(() -> f.button("Delete").doClick());
+            f.runTasks();
+            assertEquals(List.of("Default", "True Tile"), f.saved.profiles.names());
+            assertTrue(f.saved.profiles.savedNames().isEmpty());
+            SwingUtilities.invokeAndWait(() -> {
+                assertEquals("True Tile", f.list().getSelectedValue());
+                assertTrue(f.button("Load").isEnabled());
+                assertFalse(f.button("Delete").isEnabled());
+            });
+        }
+        finally { f.close(); }
+    }
+
     private static void layout(Container parent)
     {
         parent.doLayout();
@@ -237,15 +273,19 @@ public class MovementProfilesSidebarTest
 
     private static final class Fixture
     {
-        final MovementProfilesTest.Fixture saved = new MovementProfilesTest.Fixture();
+        final MovementProfilesTest.Fixture saved;
         final List<Runnable> tasks = new ArrayList<>();
         final AtomicLong profileId = new AtomicLong(1);
         final FakeDialogs dialogs = new FakeDialogs();
-        final MovementProfilesSidebar sidebar = new MovementProfilesSidebar(saved.profiles, tasks::add, null, profileId::get);
+        final MovementProfilesSidebar sidebar;
         MovementProfilesPanel panel;
 
-        Fixture() throws Exception
+        Fixture() throws Exception { this(false); }
+
+        Fixture(boolean bundled) throws Exception
         {
+            saved = new MovementProfilesTest.Fixture(bundled);
+            sidebar = new MovementProfilesSidebar(saved.profiles, tasks::add, null, profileId::get);
             SwingUtilities.invokeAndWait(() -> panel = new MovementProfilesPanel(sidebar::apply, dialogs));
             // Test-only wiring; production creates the same view through start() on EDT.
             Field view = MovementProfilesSidebar.class.getDeclaredField("panel");

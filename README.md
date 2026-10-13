@@ -44,6 +44,18 @@ Enable the plugin and open **Responsive Movement profiles** from RuneLite's side
 (the stacked-cards icon). It contains a **Profiles** list and **Load**, **Save** and
 **Delete** buttons at the bottom.
 
+The list includes two bundled presets:
+- **Default** — the plugin's default movement and appearance settings.
+- **True Tile** — the user's saved profile, with movement speed **5.9**, arrival
+  stages **0.2 tiles / 50%** and **1 tile / 49.8%**, and its saved true-tile,
+  camera, facing and overhead settings.
+
+Bundled presets apply through **Load**, just like saved profiles. Your existing
+same-name saves take precedence, ignoring capitalization. **Save** on a bundled
+name creates a personal override; deleting that saved override reveals the
+bundled preset again. **Delete** is enabled only for personal saves. No preset is
+automatically applied when the plugin starts.
+
 Selecting a row only selects it. **Load** applies that profile's movement, pacing,
 true-tile, camera and overhead settings immediately. The panel reminds you that
 you may need to back out of the standard plugin settings and reopen them to refresh
@@ -61,7 +73,7 @@ with the earlier sidebar. Debugging controls stay independent of loaded profiles
 | Responsive starts | On | Early visual previews from observed clicks. |
 | Movement speed multiplier | 5.0 | Displayed movement pace; 5.0 is normal, range 0.5–10.0. |
 | Turning speed | 30 | Maximum custom turning rate, scaled by frame time. |
-| Walk-click smoothing (ms) | 50 | Wait up to 0–300 ms from click observation; the next game tick ends a nonzero wait early. 0 disables the wait. |
+| Movement delay | 50 | will wait desired ms to move unless a new tick passes before the desired number, set to 150 to feel more like the regular game |
 | Face interactions on arrival | Off | Begin smoothly turning toward the clicked NPC/object as soon as displayed movement arrives, using Turning speed. |
 | Original player when aligned | On | Native rendering when stationary position, pose, and facing agree. |
 | Adaptive camera | On | Follow displayed movement during drawing; native camera mode is restored before input. |
@@ -70,7 +82,7 @@ with the earlier sidebar. Debugging controls stay independent of loaded profiles
 
 ### Movement pacing
 
-Both adjustments and their strength settings now have their own config section.
+Pacing adjustments and their strength settings have their own config section.
 Existing catch-up settings are retained.
 
 | Setting | Default | What it controls |
@@ -79,13 +91,43 @@ Existing catch-up settings are retained.
 | Catch-up speed boost (%) | 10 | Maximum extra displayed speed, range 0–50%; tapers near the true tile. |
 | Slow down ahead of true tile | On | Gently slow a checked preview that leads true-tile progress. |
 | Ahead slowdown (%) | 10 | Maximum displayed speed reduction, range 0–50%; builds over the first tile ahead. |
+| Slow down on arrival | Off | Two smooth, configurable speed stages for trips of at least three tiles. |
+| First slowdown length (tiles) | 0.2 | Distance of the first speed ramp before the final stage, range 0–10; 0 skips it. |
+| First slowdown speed (%) | 50 | Speed reached at the end of the first stage, range 1–100% of normal displayed walk/run speed. |
+| Final slowdown length (tiles) | 1.0 | Distance of the final speed ramp ending at the destination, range 0–10; 0 skips it. |
+| Final slowdown speed (%) | 49.7 | Speed reached at arrival, independently set to 1–100% of normal displayed walk/run speed. |
 
 Strengths are relative to your Movement speed setting: **10%** allows up to
 **1.10×** that displayed pace while catching up, or reduces it toward **0.90×**
-when ahead. Each toggle is independent; 0 also disables its adjustment. Settings
+when ahead. Each toggle is independent; 0 also disables catch-up/ahead adjustments. Settings
 can be changed while moving without resetting position. Existing combat pursuit,
 rejection recovery and the small continuous-run arrival reserve retain their own
 pacing. Collision checks and prediction limits still apply.
+
+Enable **Slow down on arrival**, then adjust each stage's length and target
+speed independently. With defaults, slowing starts **1.2 tiles before arrival**:
+the first **0.2 tiles** ease to **50%** of normal pace, and the final tile eases to
+**49.7%**. These defaults were selected from the user's in-game tuning. For example,
+first length **1.5**, first speed **60%**, final length
+**0.75**, final speed **30%** gives a longer gentle approach and a shorter,
+slower finish. Lengths allow fractional tiles; their actual duration depends on
+the selected speeds. The ramps meet continuously. Set a stage's length to **0**
+to skip it, or both speeds to **100%** for normal pacing. Stages longer than the
+trip scale down together, preserving their length ratio.
+
+**Only trips of three or more logical tile steps qualify.** Each diagonal step
+counts as one tile, so two diagonal steps stay unaffected and three qualify.
+This is the total trip length, not a requirement to move three tiles before the
+approach can begin. Short trips match arrival slowdown being off, including gait.
+Arrival pacing replaces catch-up/ahead adjustments only within its configured
+approach and applies to the actual destination, not intermediate queue boundaries.
+The native walk pose is used when the configured pace reaches walking speed.
+Once the server confirms arrival, the displayed character finishes on the
+true-tile centre without a new snap or an endless easing tail.
+This is visual alignment, not a change to server arrival timing. For checking
+alignment, enable **Show true tile** with **Server true tile** tracking.
+Older arrival percentages remain supported as defaults for the new speed controls;
+loading an older movement profile converts its arrival settings explicitly.
 
 ### True tile
 
@@ -192,6 +234,7 @@ decisions; nothing is uploaded automatically.
 - [Publication review and remaining steps](docs/PUBLISHING.md)
 - [In-game validation and confirmation history](docs/VALIDATION.md)
 - [Native model lifetime](docs/RUNELITE-1.13.md)
+- [Unused-code and duplicate-handling review](docs/CODE-CLEANUP.md)
 - [Trace format](docs/TRACE-FORMAT.md)
 - [Archived development README](docs/DEVELOPMENT-HISTORY.md)
 

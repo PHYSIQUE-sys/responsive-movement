@@ -119,7 +119,7 @@ final class MovementProfilesSidebar implements AutoCloseable
     private void refreshPanel(String selected)
     {
         if (panel == null) { return; }
-        try { panel.refresh(profiles.names(), profiles.selected(), selected); }
+        try { panel.refresh(profiles.names(), profiles.selected(), selected, profiles.savedNames()); }
         catch (IllegalArgumentException error) { panel.complete(error.getMessage(), true); }
     }
 

@@ -13,7 +13,6 @@ import net.runelite.client.config.Keybind;
 final class MovementSettings
 {
     enum Kind { BOOLEAN, INTEGER, DECIMAL, COLOR, TRACKING, KEYBIND }
-    static final String[] SECTIONS = {"Movement", "Movement pacing", "True tile", "Camera", "Overheads", "Debugging"};
     final List<Option> options;
 
     MovementSettings(ResponsiveMovementConfig config)
@@ -24,12 +23,18 @@ final class MovementSettings
         items.add(integer("turnSpeed", "Turning speed", 0, config::turnSpeed, 1, 100));
         items.add(integer("snapDistance", "Discontinuity snap distance", 0, config::snapDistance, 1, 10));
         items.add(bool("originalWhenAligned", "Original player when aligned", 0, config::originalWhenAligned));
-        items.add(integer("clickSmoothingMs", "Walk-click smoothing (ms)", 0, config::clickSmoothingMs, 0, 300));
+        items.add(integer("clickSmoothingMs", "Movement delay", 0, config::clickSmoothingMs, 0, 300));
         items.add(bool("faceInteractionsOnArrival", "Face interactions on arrival", 0, config::faceInteractionsOnArrival));
         items.add(bool("catchUp", "Catch up to true tile", 1, config::catchUp));
         items.add(integer("catchUpPercent", "Catch-up speed boost (%)", 1, config::catchUpPercent, 0, 50));
         items.add(bool("slowAhead", "Slow down ahead of true tile", 1, config::slowAhead));
         items.add(integer("slowAheadPercent", "Ahead slowdown (%)", 1, config::slowAheadPercent, 0, 50));
+        items.add(bool("slowArrival", "Slow down on arrival", 1, config::slowArrival));
+        items.add(integer("slowArrivalPercent", "Legacy arrival slowdown (%)", 1, config::slowArrivalPercent, -1, 50));
+        items.add(decimal("arrivalFirstTiles", "First slowdown length (tiles)", 1, config::arrivalFirstTiles, 0, 10));
+        items.add(decimal("arrivalFirstSpeed", "First slowdown speed (%)", 1, config::arrivalFirstSpeed, 1, 100));
+        items.add(decimal("arrivalFinalTiles", "Final slowdown length (tiles)", 1, config::arrivalFinalTiles, 0, 10));
+        items.add(decimal("arrivalFinalSpeed", "Final slowdown speed (%)", 1, config::arrivalFinalSpeed, 1, 100));
         items.add(bool("showTrueTile", "Show true tile", 2, config::showTrueTile));
         items.add(new Option("trueTileMode", "Highlight tracking", 2, Kind.TRACKING, config::trueTileMode, 0, 0));
         items.add(new Option("trueTileFill", "Fill colour", 2, Kind.COLOR, config::trueTileFill, 0, 0));
@@ -72,11 +77,22 @@ final class MovementSettings
         for (Option option : options)
         {
             // Debug toggles, hotkeys and unknown future keys never acquire a
-            // profile's movement/presentation ownership. Missing keys retain current values.
+            // profile's movement/presentation ownership. Missing keys retain current values,
+            // except the explicit legacy-arrival conversion below.
             if (option.section != 5 && stored.containsKey(option.key))
             {
                 values.put(option.key, option.encode(option.decode(stored.get(option.key))));
             }
+        }
+        if (values.containsKey("slowArrivalPercent"))
+        {
+            // An older profile retains its arrival choice even after a newer
+            // profile has supplied explicit speeds. Never rewrite persisted keys.
+            int legacy = Integer.parseInt(values.get("slowArrivalPercent"));
+            values.putIfAbsent("arrivalFirstSpeed", legacy == 0 ? "100.0" : "50.0");
+            values.putIfAbsent("arrivalFinalSpeed", Double.toString(legacy < 0 ? 49.7 : legacy == 0 ? 100 : 50 * (1 - legacy / 100.0)));
+            values.putIfAbsent("arrivalFirstTiles", legacy < 0 ? "0.2" : "1.0");
+            values.putIfAbsent("arrivalFinalTiles", "1.0");
         }
         return values;
     }

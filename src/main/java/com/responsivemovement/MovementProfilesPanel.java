@@ -8,7 +8,9 @@ import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
@@ -59,6 +61,7 @@ final class MovementProfilesPanel extends PluginPanel
     private final JTextArea status = text("Select a profile, then click Load.");
     private final JButton load = button("Load"), save = button("Save"), delete = button("Delete");
     private String loadedName = "";
+    private Set<String> deletableNames = new HashSet<>();
     private boolean busy, closed;
     private int dialogGeneration;
 
@@ -148,7 +151,13 @@ final class MovementProfilesPanel extends PluginPanel
 
     void refresh(List<String> saved, String loaded, String preferredSelection)
     {
+        refresh(saved, loaded, preferredSelection, saved);
+    }
+
+    void refresh(List<String> saved, String loaded, String preferredSelection, List<String> deletable)
+    {
         if (closed) { return; }
+        deletableNames = new HashSet<>(deletable);
         String previous = profiles.getSelectedValue();
         names.clear(); saved.forEach(names::addElement);
         loadedName = loaded;
@@ -185,7 +194,7 @@ final class MovementProfilesPanel extends PluginPanel
     private void delete()
     {
         String selected = profiles.getSelectedValue();
-        if (closed || busy || selected == null) { return; }
+        if (closed || busy || selected == null || !deletableNames.contains(selected)) { return; }
         int generation = dialogGeneration;
         if (dialogs.delete(this, selected) && !closed && generation == dialogGeneration) { request(Action.DELETE, selected); }
     }
@@ -224,7 +233,7 @@ final class MovementProfilesPanel extends PluginPanel
         profiles.setEnabled(enabled);
         load.setEnabled(enabled && profiles.getSelectedValue() != null);
         save.setEnabled(enabled);
-        delete.setEnabled(enabled && profiles.getSelectedValue() != null);
+        delete.setEnabled(enabled && deletableNames.contains(profiles.getSelectedValue()));
     }
 
     private static JButton button(String title)

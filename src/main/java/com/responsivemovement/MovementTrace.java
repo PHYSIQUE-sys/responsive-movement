@@ -293,7 +293,6 @@ final class MovementTrace
         final long clickSequence, routeSequence, started;
         final MovementPath.TraceSnapshot route;
         final int cycle, scene, vx, vy, ax, ay, nx, ny, queue, orientation, pose, frame, action;
-        final int indicatorX, indicatorY;
         final int dx, dy, clickCycle;
         final String startDecision;
         final String phase;
@@ -331,10 +330,6 @@ final class MovementTrace
             this.route = route; this.started = started;
             this.cycle = cycle; this.scene = scene;
             vx = x(visible); vy = y(visible); ax = x(authority); ay = y(authority); nx = x(nativePoint); ny = y(nativePoint);
-            // True Tile Player Indicators derives its local-player tile from
-            // LocalPoint.fromWorld(worldView, player.getWorldLocation()).
-            // `authority` is that same point, retained under its overlay name.
-            indicatorX = ax; indicatorY = ay;
             this.phase = phase; this.queue = queue; this.moving = moving; this.running = running;
             this.orientation = orientation; this.pose = pose; this.frame = frame; this.action = action; this.nativeRender = nativeRender;
             dx = x(destination); dy = y(destination);
@@ -374,7 +369,7 @@ final class MovementTrace
                 " native=" + nx + "," + ny + " phase=" + phase + " queue=" + queue + " moving=" + moving +
                 " running=" + running + " orientation=" + orientation + " pose=" + pose + " frame=" + frame +
                 " action=" + action + " nativeRender=" + nativeRender + " destination=" + dx + "," + dy +
-                " trueTileIndicator=" + indicatorX + "," + indicatorY +
+                " trueTileIndicator=" + ax + "," + ay +
                 " clickCycle=" + clickCycle + " startDecision=" + startDecision +
                 " interaction=" + interactionApproach + " clickAction=" + clickAction + " clickTarget=" + clickTarget +
                 " canContinue=" + canContinue + " inputPending=" + inputPending +

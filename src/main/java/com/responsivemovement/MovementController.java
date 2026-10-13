@@ -97,12 +97,7 @@ final class MovementController
 
     void sceneChanged(boolean loading)
     {
-        interactionFacing = null;
-        walkInput = false;
-        followPresentation = null;
-        clearCombat();
-        clearCombatWalk();
-        clearCombatInput();
+        clearPresentationOwnership();
         ++generation;
         sceneContinuation = loading && (!scenePending || sceneContinuation);
         if (!loading) { path = null; }
@@ -305,12 +300,7 @@ final class MovementController
         Player player = client.getLocalPlayer();
         if (client.getGameState() != GameState.LOGGED_IN || player == null || player.getWorldView() == null)
         {
-            interactionFacing = null;
-            walkInput = false;
-            followPresentation = null;
-            clearCombat();
-            clearCombatWalk();
-            clearCombatInput();
+            clearPresentationOwnership();
             gait.reset();
             presentation.nativeFallback();
             return false;
@@ -334,12 +324,7 @@ final class MovementController
         }
         if (scenePending || discontinuity || baseX != view.getBaseX() || baseY != view.getBaseY())
         {
-            interactionFacing = null;
-            walkInput = false;
-            followPresentation = null;
-            clearCombat();
-            clearCombatWalk();
-            clearCombatInput();
+            clearPresentationOwnership();
             presentation.invalidateScene();
             gait.reset();
             boolean resumed = false;
@@ -378,12 +363,7 @@ final class MovementController
 
         if (pohArrival || nativeLocationAction(player.getAnimation()))
         {
-            interactionFacing = null;
-            walkInput = false;
-            followPresentation = null;
-            clearCombat();
-            clearCombatWalk();
-            clearCombatInput();
+            clearPresentationOwnership();
             interactionTarget = null;
             npcApproach = null; npcPreview = false;
             gait.reset();
@@ -578,11 +558,18 @@ final class MovementController
         if (player.getAnimation() != -1 && !ownedWalk) { yellowFacing = preserveFacing = facingSettled = false; }
         tryStart(now, authoritative);
         LocalPoint destination = client.getLocalDestinationLocation();
-        boolean continuingRun = !interactionApproach && (!actionOrEffect || ownedWalk) && !input.pending() &&
+        // Conservative attacks still use native approach steps. While their
+        // observed flag remains onward, share the confirmed run's small reserve
+        // instead of publishing idle between pairs; actions/arrival release it.
+        boolean continuingRun = (!interactionApproach || followingCombat && !npcApproach.movingCombat()) &&
+            (!actionOrEffect || ownedWalk) && !input.pending() &&
             runEnabled() && MovementPath.sameView(destination, authoritative) && !destination.equals(authoritative) &&
             !nativePoint.equals(authoritative);
         path.advance(now, continuingRun, config.catchUp() ? config.catchUpPercent() : 0,
-            config.slowAhead() ? config.slowAheadPercent() : 0);
+            config.slowAhead() ? config.slowAheadPercent() : 0,
+            destination,
+            config.slowArrival() ? new ArrivalPacing(config.arrivalFirstTiles(), config.arrivalFinalTiles(),
+                config.arrivalFirstSpeed(), config.arrivalFinalSpeed()) : ArrivalPacing.OFF);
         boolean travelled = path.turnFraction() > 0;
         if (followingCombat) { combatContinuity.arrived(path.position()); }
         LocalPoint combatFaceTarget = followingCombat && (!path.moving() || npcApproach.adjacentCombat() && combatContinuity.locked)
@@ -610,7 +597,7 @@ final class MovementController
             if (dx != 0 || dy != 0) { facing.movement(dx, dy); }
         }
         boolean moving = path.moving();
-        boolean posedMoving = gait.present(moving, path.running(), path.finished() && "confirmed".equals(path.phase()),
+        boolean posedMoving = gait.present(moving, path.presentationRunning(), path.finished() && "confirmed".equals(path.phase()),
             MovementPath.sameView(destination, authoritative) && !destination.equals(authoritative),
             !nativePoint.equals(authoritative), !interactionApproach || followingCombat, !actionOrEffect, now);
         if (posedMoving) { preserveFacing = false; facingSettled = false; }
@@ -635,7 +622,7 @@ final class MovementController
         boolean held = preserveFacing && (!facingSettled || !visible.equals(nativePoint)) ||
             interactionApproach && !nativeArrived || faceTarget != null || combatWalk;
         boolean ready = presentation.prepare(visible, (int) facing.angle(), posedMoving,
-            moving ? path.running() : gait.running(),
+            moving ? path.presentationRunning() : gait.running(),
             config.originalWhenAligned(), held || !path.finished(), nativePoint.equals(authoritative));
         boolean sampleAccepted = trace.willSample(client.getGameCycle());
         trace.record(client.getGameCycle(), generation, presentation.nativeVisible() ? nativePoint : visible,
@@ -934,11 +921,6 @@ final class MovementController
         }
         if (!"preview".equals(path.phase())) { return; }
         if (published.equals(path.clickedDestination())) { return; }
-        if (path.trimPreviewTo(published))
-        {
-            startDecision = "trimmed-native-approach";
-            return;
-        }
         if (npcApproach != null && npcApproach.combat != null && path.holdCombatForecast(published, now))
         {
             startDecision = "held-combat-boundary";
@@ -1004,13 +986,26 @@ final class MovementController
         boolean moved = combatContinuity.moved;
         MovementPath next = path.followCombat(npcApproach, runEnabled(), now,
             npcApproach.adjacentCombat() && combatContinuity.locked);
-        combatContinuity.attempted();
+        // Keep an already observed target step pending while its old preview
+        // returns to authority. Once settled, the same remaining reserve can
+        // handle that step; blocked/expired attempts are still consumed.
+        if (next != null || !path.awaitingCombatRecovery(now)) { combatContinuity.attempted(); }
         if (next != null)
         {
             path = next; approachGoal = path.clickedDestination();
             startDecision = path.moving() ? moved ? "followed-combat-target" : "started-combat-approach" : "held-combat-target";
         }
         else { startDecision = "combat-follow-unavailable"; }
+    }
+
+    private void clearPresentationOwnership()
+    {
+        interactionFacing = null;
+        walkInput = false;
+        followPresentation = null;
+        clearCombat();
+        clearCombatWalk();
+        clearCombatInput();
     }
 
     private void clearCombat()
@@ -1189,12 +1184,7 @@ final class MovementController
 
     void close()
     {
-        interactionFacing = null;
-        walkInput = false;
-        followPresentation = null;
-        clearCombat();
-        clearCombatWalk();
-        clearCombatInput();
+        clearPresentationOwnership();
         trace.close();
         gait.reset();
         presentation.close(); input.reset(); path = null; owner = null; lastAuthority = null;

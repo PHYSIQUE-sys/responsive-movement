@@ -30,7 +30,6 @@ public class RandomDirectionTest
         advance(path, 0, 360);
         assertTrue(path.accept(oldEnd, true));
         LocalPoint before = path.position();
-        assertNull("old narrow handlers reject this", path.anticipateReversal(target, true, 360_000_000L));
         assertNull(path.anticipateRedirect(target, true, 360_000_000L));
         MovementPath revised = path.retargetWalk(target, true, 360_000_000L);
         assertNotNull("a fresh click must not wait behind the confirmed chord", revised);

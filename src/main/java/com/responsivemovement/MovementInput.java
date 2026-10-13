@@ -48,11 +48,7 @@ final class MovementInput
     // allowed native input processing to run. Red clicks use the overload above.
     LocalPoint destination(LocalPoint current, long now, int generation, int level, LocalPoint previousClickDestination)
     {
-        if (!pending) { return null; }
-        if (generation != scene || level != plane || now - clicked > (destination == null ? 100_000_000L : 900_000_000L))
-        {
-            clear(); return null;
-        }
+        if (!validObservation(now, generation, level)) { return null; }
         if (!observedDestination && current != null && (!current.equals(beforeDestination) ||
             previousClickDestination != null && !current.equals(previousClickDestination)))
         {
@@ -79,12 +75,18 @@ final class MovementInput
     /** The first game tick after a smoothed click ends only its wait, never supplies a destination. */
     void gameTick(long now, int generation, int level)
     {
-        if (!pending) { return; }
+        if (!validObservation(now, generation, level)) { return; }
+        if (settleNanos > 0 && now >= clicked) { tickReleased = true; }
+    }
+
+    private boolean validObservation(long now, int generation, int level)
+    {
+        if (!pending) { return false; }
         if (generation != scene || level != plane || now - clicked > (destination == null ? 100_000_000L : 900_000_000L))
         {
-            clear(); return;
+            clear(); return false;
         }
-        if (settleNanos > 0 && now >= clicked) { tickReleased = true; }
+        return true;
     }
 
     void clear() { pending = ready = observedDestination = tickReleased = false; beforeDestination = destination = null; replacementObserved = false; }

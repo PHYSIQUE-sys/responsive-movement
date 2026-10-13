@@ -17,6 +17,7 @@ final class MovementProfiles
     private static final int MAX_PROFILES = 64;
     private final Store store;
     private final MovementSettings settings;
+    private final Map<String, Map<String, String>> bundled;
 
     interface Store
     {
@@ -24,11 +25,16 @@ final class MovementProfiles
         void set(String key, String value);
     }
 
-    MovementProfiles(Store store, MovementSettings settings) { this.store = store; this.settings = settings; }
+    MovementProfiles(Store store, MovementSettings settings) { this(store, settings, MovementPresets.PROFILES); }
+
+    MovementProfiles(Store store, MovementSettings settings, Map<String, Map<String, String>> bundled)
+    {
+        this.store = store; this.settings = settings; this.bundled = bundled;
+    }
 
     List<String> names()
     {
-        List<String> names = new ArrayList<>(read().keySet());
+        List<String> names = new ArrayList<>(available().keySet());
         names.sort(String.CASE_INSENSITIVE_ORDER);
         return names;
     }
@@ -36,16 +42,17 @@ final class MovementProfiles
     String selected()
     {
         String selected = store.get(SELECTED_KEY);
-        return selected != null && read().containsKey(selected) ? selected : "";
+        return selected != null && available().containsKey(selected) ? selected : "";
     }
 
-    void selectCurrentSettings() { store.set(SELECTED_KEY, ""); }
+    List<String> savedNames() { return new ArrayList<>(read().keySet()); }
 
     void save(String requestedName)
     {
         String name = name(requestedName);
         Map<String, Map<String, String>> profiles = read();
-        String existing = profiles.keySet().stream().filter(key -> key.equalsIgnoreCase(name)).findFirst().orElse(name);
+        String existing = profiles.keySet().stream().filter(key -> key.equalsIgnoreCase(name)).findFirst().orElseGet(() ->
+            bundled.keySet().stream().filter(key -> key.equalsIgnoreCase(name)).findFirst().orElse(name));
         if (!profiles.containsKey(existing) && profiles.size() >= MAX_PROFILES)
         {
             throw new IllegalArgumentException("Up to " + MAX_PROFILES + " profiles can be saved.");
@@ -58,7 +65,7 @@ final class MovementProfiles
 
     void load(String name)
     {
-        Map<String, String> stored = read().get(name);
+        Map<String, String> stored = available().get(name);
         if (stored == null) { throw new IllegalArgumentException("That profile is no longer available."); }
         // Validate everything before the first config write. The sidebar applies
         // this batch on the client thread without resetting movement state.
@@ -111,6 +118,17 @@ final class MovementProfiles
             // Preserve malformed/future saves instead of overwriting user data.
             throw new IllegalArgumentException("Saved profiles could not be read; existing saves have been preserved.", error);
         }
+    }
+
+    private Map<String, Map<String, String>> available()
+    {
+        Map<String, Map<String, String>> profiles = new LinkedHashMap<>(bundled);
+        read().forEach((name, values) -> {
+            // A saved same-name profile owns that row, regardless of casing.
+            profiles.keySet().removeIf(key -> key.equalsIgnoreCase(name));
+            profiles.put(name, values);
+        });
+        return profiles;
     }
 
     private static String encode(Map<String, Map<String, String>> profiles)

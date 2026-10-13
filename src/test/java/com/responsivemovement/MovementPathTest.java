@@ -16,7 +16,7 @@ public class MovementPathTest
         assertTrue(path.accept(tile(14, 10), true));
         advance(path, 0, 200);
         LocalPoint before = path.position();
-        MovementPath reverse = path.anticipateReversal(tile(9, 10), true, 200_000_000L);
+        MovementPath reverse = path.retargetWalk(tile(9, 10), true, 200_000_000L);
         assertNotNull(reverse);
         assertEquals(before, reverse.position());
         advance(reverse, 200, 220);
@@ -33,18 +33,34 @@ public class MovementPathTest
     }
 
     @Test
-    public void reversalKeepsThePredictionDeadlineAndRejectsCornerShortcuts()
+    public void walkRetargetKeepsThePredictionDeadlineForTurnsForwardClicksAndKnightReturns()
     {
         MovementPath path = MovementPath.idle(tile(10, 10), 0, 1, OPEN);
         assertTrue(path.accept(tile(12, 10), true));
         advance(path, 0, 200);
-        assertNull(path.anticipateReversal(tile(9, 11), true, 200_000_000L));
-        assertNull(path.anticipateReversal(tile(15, 10), true, 200_000_000L));
-        assertNull(path.anticipateReversal(tile(9, 10), true, 2000_000_000L));
+        for (LocalPoint target : new LocalPoint[] {tile(9, 11), tile(15, 10)})
+        {
+            MovementPath next = path.retargetWalk(target, true, 200_000_000L);
+            assertNotNull(next);
+            assertEquals(path.position(), next.position());
+            assertEquals(path.confirmed(), next.confirmed());
+            assertEquals(target, next.clickedDestination());
+            assertEquals(path.predictionDeadlineNanos(), next.predictionDeadlineNanos());
+            advance(next, 200, 220);
+            assertTrue(distanceSquared(next.position(), target) < distanceSquared(path.position(), target));
+            assertTrue(next.clear());
+        }
+        assertNull(path.retargetWalk(tile(9, 10), true, path.predictionDeadlineNanos()));
         MovementPath chord = MovementPath.idle(tile(10, 10), 0, 1, OPEN);
         assertTrue(chord.accept(tile(12, 11), true));
         advance(chord, 0, 200);
-        assertNull(chord.anticipateReversal(tile(9, 10), true, 200_000_000L));
+        MovementPath reverse = chord.retargetWalk(tile(9, 10), true, 200_000_000L);
+        assertNotNull(reverse);
+        assertEquals(chord.position(), reverse.position());
+        assertEquals(chord.predictionDeadlineNanos(), reverse.predictionDeadlineNanos());
+        advance(reverse, 200, 220);
+        assertTrue(distanceSquared(reverse.position(), tile(9, 10)) < distanceSquared(chord.position(), tile(9, 10)));
+        assertTrue(reverse.clear());
     }
 
     @Test
@@ -54,7 +70,9 @@ public class MovementPathTest
             (a, b) -> b.getX() > a.getX());
         assertTrue(path.accept(tile(12, 10), true));
         advance(path, 0, 200);
-        assertNull(path.anticipateReversal(tile(9, 10), true, 200_000_000L));
+        LocalPoint before = path.position();
+        assertNull(path.retargetWalk(tile(9, 10), true, 200_000_000L));
+        assertEquals(before, path.position());
     }
 
     @Test
@@ -71,7 +89,7 @@ public class MovementPathTest
             {
                 LocalPoint target = i % 2 == 0 ? low : high;
                 LocalPoint before = path.position();
-                MovementPath next = path.anticipateReversal(target, true, time * 1_000_000L);
+                MovementPath next = path.retargetWalk(target, true, time * 1_000_000L);
                 assertNotNull(next);
                 assertEquals(before, next.position());
                 path = next;

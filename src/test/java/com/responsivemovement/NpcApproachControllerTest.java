@@ -921,6 +921,12 @@ public class NpcApproachControllerTest
         int catchUpPercent = 10;
         boolean slowAhead;
         int slowAheadPercent = 10;
+        boolean slowArrival;
+        int slowArrivalPercent = -1;
+        double arrivalFirstTiles = 0.2;
+        double arrivalFinalTiles = 1;
+        double arrivalFirstSpeed = 50;
+        double arrivalFinalSpeed = 49.7;
         int nativeOrientation;
         int spotId = 1, spotStartCycle, spotFrame;
         private ActorSpotAnim retainedSpot;
@@ -982,6 +988,12 @@ public class NpcApproachControllerTest
                 @Override public int catchUpPercent() { return catchUpPercent; }
                 @Override public boolean slowAhead() { return slowAhead; }
                 @Override public int slowAheadPercent() { return slowAheadPercent; }
+                @Override public boolean slowArrival() { return slowArrival; }
+                @Override public int slowArrivalPercent() { return slowArrivalPercent; }
+                @Override public double arrivalFirstTiles() { return arrivalFirstTiles; }
+                @Override public double arrivalFinalTiles() { return arrivalFinalTiles; }
+                @Override public double arrivalFirstSpeed() { return arrivalFirstSpeed; }
+                @Override public double arrivalFinalSpeed() { return arrivalFinalSpeed; }
             };
             controller = traceEntries == null ? new MovementController(client, config, () -> now) :
                 new MovementController(client, config, () -> now, new MovementTrace(() -> now, () -> 1790938361318L,

@@ -56,8 +56,9 @@ final class PlayerPresentation
         boolean action = owner.getAnimation() != -1;
         boolean effect = hasSpotAnimation();
         int requested = moving ? running ? originals.run : originals.walk : originals.idle;
-        boolean nativeIdle = canUseNative(allowNative, moving, action, effect, holdFacing,
-            location, owner.getLocalLocation(), orientation, owner.getCurrentOrientation()) &&
+        boolean useNative = canUseNative(allowNative, moving, action, effect, holdFacing,
+            location, owner.getLocalLocation(), orientation, owner.getCurrentOrientation());
+        boolean nativeIdle = useNative &&
             owner.getPoseAnimation() == originals.idle && owner.getPoseAnimationFrame() >= 0;
         if (nativeIdle)
         {
@@ -91,8 +92,6 @@ final class PlayerPresentation
         // 1.13.0 removed posed-model merging. Probe availability here, then
         // build again only when the native temporary-object pass requests it.
         // Never retain a shared scratch model or animate an already posed mesh.
-        boolean useNative = canUseNative(allowNative, moving, action, effect, holdFacing,
-            location, owner.getLocalLocation(), orientation, owner.getCurrentOrientation());
         boolean validPose = action || owner.getPoseAnimation() == -1 || owner.getPoseAnimationFrame() >= 0;
         // A stationary native actor needs idle == displayed gait to keep its
         // native pose clock advancing. During an action the native builder must
@@ -180,9 +179,6 @@ final class PlayerPresentation
     {
         nativeFallback();
         if (body != null) { body.setActive(false); body = null; }
-        for (NativeModelObject object : spots.values()) { object.setActive(false); }
-        spots.clear();
-        activeSpots.clear();
     }
 
     void close()
@@ -195,8 +191,6 @@ final class PlayerPresentation
     }
 
     boolean nativeVisible() { return nativeVisible; }
-    boolean ready() { return body != null && body.ready() && body.isActive(); }
-    LocalPoint location() { return body == null ? null : body.getLocation(); }
 
     private static final class PoseSet
     {

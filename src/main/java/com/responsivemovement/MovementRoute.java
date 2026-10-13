@@ -3,9 +3,12 @@ package com.responsivemovement;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
+import java.util.Queue;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 import net.runelite.api.Perspective;
@@ -32,7 +35,12 @@ final class MovementRoute
         int tile = Perspective.LOCAL_TILE_SIZE;
         if (!MovementPath.sameView(from, to) || !MovementPath.tileCenter(from) || !MovementPath.tileCenter(to) ||
             maxSteps < 0 || MovementPath.distance(from, to) > maxSteps * tile) { return null; }
-        return search(from, maxSteps, collision, point -> reached(point, to, approach));
+        int radius = MovementPath.distance(from, to) / tile;
+        // A distant goal can lie beyond the open-area radius of the vertex
+        // budget. Direct routes were tried first by MovementPath; guide only
+        // this long obstacle search instead of spending its budget sideways.
+        LocalPoint guide = (long) (2 * radius + 1) * (2 * radius + 1) > MAX_VISITED ? to : null;
+        return search(from, maxSteps, collision, point -> reached(point, to, approach), guide, approach);
     }
 
     /** First reachable cardinal perimeter tile, using the same bounded reversible search. */
@@ -53,34 +61,61 @@ final class MovementRoute
     private static List<LocalPoint> search(LocalPoint from, int maxSteps,
         BiPredicate<LocalPoint, LocalPoint> collision, Predicate<LocalPoint> reached)
     {
+        return search(from, maxSteps, collision, reached, null, false);
+    }
+
+    private static final class Step
+    {
+        final LocalPoint point;
+        final int depth, remaining, order;
+
+        Step(LocalPoint point, int depth, LocalPoint guide, boolean approach, int order)
+        {
+            this.point = point; this.depth = depth; this.order = order;
+            remaining = guide == null ? 0 : Math.max(0,
+                MovementPath.distance(point, guide) / Perspective.LOCAL_TILE_SIZE - (approach ? 1 : 0));
+        }
+    }
+
+    private static List<LocalPoint> search(LocalPoint from, int maxSteps,
+        BiPredicate<LocalPoint, LocalPoint> collision, Predicate<LocalPoint> reached,
+        LocalPoint guide, boolean approach)
+    {
         int tile = Perspective.LOCAL_TILE_SIZE;
         if (reached.test(from)) { return Collections.emptyList(); }
         Map<LocalPoint, LocalPoint> parent = new HashMap<>();
-        ArrayDeque<LocalPoint> queue = new ArrayDeque<>();
+        Map<LocalPoint, Integer> depths = new HashMap<>();
+        Queue<Step> queue = guide == null ? new ArrayDeque<>() : new PriorityQueue<>(
+            Comparator.comparingInt((Step step) -> step.depth + step.remaining)
+                .thenComparingInt(step -> step.remaining).thenComparingInt(step -> step.order));
         parent.put(from, from);
-        queue.add(from);
-        for (int depth = 0; depth < maxSteps && !queue.isEmpty(); ++depth)
+        depths.put(from, 0);
+        int order = 0, expanded = 0;
+        queue.add(new Step(from, 0, guide, approach, order++));
+        while (!queue.isEmpty())
         {
-            int count = queue.size();
-            for (int i = 0; i < count; ++i)
+            Step current = queue.remove();
+            if (current.depth != depths.get(current.point) || current.depth >= maxSteps) { continue; }
+            if (++expanded > MAX_VISITED) { return null; }
+            for (int[] direction : DIRECTIONS)
             {
-                LocalPoint current = queue.removeFirst();
-                for (int[] direction : DIRECTIONS)
+                LocalPoint next = new LocalPoint(current.point.getX() + direction[0] * tile,
+                    current.point.getY() + direction[1] * tile, from.getWorldView());
+                int depth = current.depth + 1;
+                Integer previousDepth = depths.get(next);
+                if (previousDepth != null && previousDepth <= depth ||
+                    !collision.test(current.point, next) || !collision.test(next, current.point)) { continue; }
+                if (previousDepth == null && parent.size() >= MAX_VISITED) { return null; }
+                parent.put(next, current.point);
+                depths.put(next, depth);
+                if (reached.test(next))
                 {
-                    LocalPoint next = new LocalPoint(current.getX() + direction[0] * tile,
-                        current.getY() + direction[1] * tile, from.getWorldView());
-                    if (parent.containsKey(next) || !collision.test(current, next) || !collision.test(next, current)) { continue; }
-                    parent.put(next, current);
-                    if (reached.test(next))
-                    {
-                        List<LocalPoint> route = new ArrayList<>();
-                        for (LocalPoint point = next; !point.equals(from); point = parent.get(point)) { route.add(point); }
-                        Collections.reverse(route);
-                        return route;
-                    }
-                    if (parent.size() >= MAX_VISITED) { return null; }
-                    queue.addLast(next);
+                    List<LocalPoint> route = new ArrayList<>();
+                    for (LocalPoint point = next; !point.equals(from); point = parent.get(point)) { route.add(point); }
+                    Collections.reverse(route);
+                    return route;
                 }
+                queue.add(new Step(next, depth, guide, approach, order++));
             }
         }
         return null;
