@@ -193,7 +193,7 @@ arc progress is not emitted as a new route every frame. Older captures omit this
 | 16 | awaiting construction origin |
 | 32 | reversal/retarget preview |
 | 64 | invalid |
-| 128 | easing NPC idle start |
+| 128 | easing a short provisional NPC/native-intent start after any confirmed prefix |
 | 256 | path running mode |
 | 512 | fresh NPC/melee retarget can retain its bounded forecast through a stale preceding-Walk endpoint |
 | 1024 | adjacent-melee path owns the bounded combat movement credit |
@@ -202,6 +202,23 @@ arc progress is not emitted as a new route every frame. Older captures omit this
 | 8192 | a Walk join has a pending one-shot tangent-continuity preparation |
 
 ## Lifetime and bounds
+
+The interaction-start follow-up adds `started-native-intent`,
+`matched-native-intent-destination`, `native-intent-target-changed` and
+`native-intent-unavailable` decisions. A provisional route's `npcMin`/`npcMax`
+in its ROUTE snapshot can now describe a clicked player/native-intent footprint,
+not only NpcApproach. Its reserve is presentation-only evidence, not server reach.
+The CLICK still records the actual opcode/option; a player target has no invented
+NPC identity. Geometry does not replace the separately latched native publication.
+`settling-click` applies to world interactions using Movement delay as well as Walk.
+
+The native Use continuity follow-up adds `startDecision` values
+`observed-native-approach-authority`, `native-approach-invalidated`, and
+`completed-native-approach`. The first identifies a checked forecast built from
+a first late native flag alongside real new player authority; it does not extend
+input observation or infer item/spell range. The latter two distinguish native-only
+target invalidation/completion from dedicated NPC/object decisions. Existing input
+and route fields, immutable snapshots, writer ordering and schema 2 are retained.
 
 All actor/config/geometry reads occur on the client thread while recording.
 Collision arrays are deep-copied; path snapshots contain bounded immutable point

@@ -285,7 +285,7 @@ final class NpcApproach
     }
 
     /** One-sided, solid counter geometry, captured once; no NPC IDs or GE coordinates. */
-    private static LocalPoint counterSide(WorldView view, LocalPoint min, LocalPoint max)
+    static LocalPoint counterSide(WorldView view, LocalPoint min, LocalPoint max)
     {
         if (!min.equals(max)) { return null; }
         CollisionData[] maps = view.getCollisionMaps();

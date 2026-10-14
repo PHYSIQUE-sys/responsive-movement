@@ -29,7 +29,7 @@ public class RepeatedWalkContinuityTest
     private static void replay(String id) throws Exception
     {
         // These captures were executed at the formerly quantized effective
-        // 1.10 pace. Keep their geometry-specific historical assertions intact.
+        // 1.10 pace. Replay their inputs and authority at that configured speed.
         replay(id, 1.10);
     }
 
@@ -89,15 +89,11 @@ public class RepeatedWalkContinuityTest
                 }
                 int angle = f.controller.orientation(); f.controller.update();
                 LocalPoint actual = f.controller.position();
-                // The fixed-time window identifies a particular positive-turn
-                // connector at the captured effective pace. A different speed
-                // can choose a different checked connector with another heading.
-                if (speed == 1.10 && id.equals("C") && t >= 7_740_000 && t <= 7_940_000)
-                {
-                    assertTrue("no corrective facing sweep in the marked curved-join window at " + t +
-                        "us, angle " + angle + " -> " + f.controller.orientation() + " position " + actual,
-                        MotionMath.difference(angle,f.controller.orientation()) >= -1);
-                }
+                // Confirmed publication pacing changes the occupied connector
+                // at a later click, so a historical absolute-time window no
+                // longer identifies a particular turn direction. Curve-facing
+                // monotonicity is checked against its actual control tangents
+                // in aCurvedConnectorCannotMakeFacingOvershootAndThenLookBack.
                 assertTrue("one frame movement budget at " + t, MovementPath.distance(previous,actual) <= Math.ceil((t - previousTime) * 0.0004 * speed) + 1);
                 assertTrue("one turn budget", Math.abs(MotionMath.difference(angle,f.controller.orientation())) <= Math.ceil(30 * (t - previousTime) / 16_667.0) + 1);
                 if (t >= begin && t < end)

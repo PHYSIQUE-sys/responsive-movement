@@ -60,6 +60,9 @@ final class MovementController
     private LocalPoint observedApproachDestination;
     private ObjectApproach objectApproach;
     private InteractionTarget interactionTarget;
+    private NativeApproach nativeApproach;
+    private boolean nativeIntentPreview;
+    private boolean interactionReplacementPending;
     private InteractionFacing interactionFacing;
     private NpcApproach npcApproach;
     private CombatContinuity combatContinuity;
@@ -111,6 +114,7 @@ final class MovementController
         observedApproachDestination = null;
         objectApproach = null; approachGoal = null;
         interactionTarget = null;
+        nativeApproach = null;
         npcApproach = null; npcPreview = false;
         presentation.invalidateScene();
         gait.reset();
@@ -124,11 +128,13 @@ final class MovementController
 
     void gameTick()
     {
-        if (owner == null || owner.getWorldView() == null || interactionApproach || !input.pending()) { return; }
+        if (owner == null || owner.getWorldView() == null) { return; }
         long now = clock.getAsLong();
+        if (nativeApproach != null) { nativeApproach.gameTick(now); }
+        if (!input.pending()) { return; }
         // Copy the native publication before ending the wait. An older flag must
         // not displace an already latched click, and a tick is not route evidence.
-        LocalPoint previousClickDestination = path != null && path.moving() && client.getGameCycle() > clickCycle
+        LocalPoint previousClickDestination = !interactionApproach && path != null && path.moving() && client.getGameCycle() > clickCycle
             ? path.clickedDestination() : null;
         input.destination(client.getLocalDestinationLocation(), now, generation, owner.getWorldView().getPlane(), previousClickDestination);
         input.gameTick(now, generation, owner.getWorldView().getPlane());
@@ -183,6 +189,8 @@ final class MovementController
         observedApproachDestination = null;
         objectApproach = null; approachGoal = null;
         interactionTarget = null;
+        nativeApproach = null;
+        nativeIntentPreview = interactionReplacementPending = false;
         npcApproach = null; npcPreview = false;
         armClick(previousDestination, smoothingMillis);
         // A successfully armed explicit Walk owns its input across a delayed
@@ -192,7 +200,11 @@ final class MovementController
         walkInput = input.pending();
         pohArrival = false;
         yellowFacing = true;
-        if (!input.pending() && path != null) { path.replacement(true); }
+        if (!input.pending() && path != null)
+        {
+            path.replacement(true);
+            if (!previewPoseAllowed() || !previewEffectsAllowed()) { path.cancel(); }
+        }
     }
 
     private void armClick(LocalPoint previousDestination, int smoothingMillis)
@@ -243,6 +255,8 @@ final class MovementController
             return;
         }
         interactionTarget = nextTarget;
+        nativeApproach = null;
+        nativeIntentPreview = interactionReplacementPending = false;
         pohArrival = false;
         yellowFacing = preserveFacing = facingSettled = false;
         interactionApproach = true;
@@ -273,8 +287,20 @@ final class MovementController
         }
         npcPreview = false;
         approachGoal = null;
-        armClick(client.getLocalDestinationLocation(), 0);
-        if (path != null) { path.replacement(true); }
+        armClick(client.getLocalDestinationLocation(), config.clickSmoothingMs());
+        nativeApproach = input.pending() ? NativeApproach.capture(client, owner, event,
+            client.getLocalDestinationLocation(), clock.getAsLong()) : null;
+        if (nativeApproach != null) { nativeApproach.delay(config.clickSmoothingMs()); }
+        if (input.pending() && nativeApproach == null) { input.clear(); }
+        // Captured NPC/combat policies own their own native evidence and reserve.
+        // They must not become an unreserved generic forecast after invalidation.
+        if (npcApproach != null) { nativeApproach = null; }
+        if (input.pending() && (config.clickSmoothingMs()>0 || npcApproach != null || nativeApproach != null && nativeApproach.hasIntent())) { input.intent(); }
+        interactionReplacementPending = true;
+        if (path != null && config.clickSmoothingMs()==0)
+        {
+            path.replacement(true); interactionReplacementPending = false;
+        }
         if (path != null && objectApproach != null &&
             objectApproach.atWallBoundary(path.confirmed(), client.getLocalDestinationLocation()))
         {
@@ -291,7 +317,6 @@ final class MovementController
             combatContinuity = new CombatContinuity(npcApproach,
                 LocalPoint.fromWorld(owner.getWorldView(), owner.getWorldLocation()), clock.getAsLong());
             combatContinuity.retainLock(previousCombat);
-            if (npcApproach.movingCombat()) { input.clear(); }
         }
     }
 
@@ -421,6 +446,13 @@ final class MovementController
         captureCombatEffects(now);
         boolean followingCombat = observeCombat(player, view, authoritative, effect, now);
         observeCombatWalk(player);
+        if (nativeApproach != null && !nativeApproach.valid(view))
+        {
+            path.cancel(); input.clear(); observedApproachDestination = null;
+            nativeApproach = null;
+            nativeIntentPreview = false;
+            startDecision = "native-approach-invalidated";
+        }
         boolean walkEffectsAllowed = !effect || combatEffectsAllowed(now);
         if (followingCombat && combatContinuity.allowed && (combatContinuity.initial || combatContinuity.moved))
         {
@@ -473,7 +505,7 @@ final class MovementController
             }
         }
         if (routeClear && interactionApproach && npcApproach == null &&
-            (interactionTarget != null || objectApproach != null) && !input.pending() &&
+            (interactionTarget != null || objectApproach != null || nativeApproach != null) && !input.pending() &&
             observedApproachDestination != null && !actionOrEffect && config.responsiveStarts())
         {
             MovementPath aligned = path.alignApproachAuthority(authoritative, runEnabled(), now);
@@ -486,6 +518,7 @@ final class MovementController
             // native presentation until a supported local segment is available.
             path = null;
             walkInput = false;
+            nativeApproach = null;
             clearCombat();
             clearCombatWalk();
             interactionTarget = null;
@@ -512,7 +545,21 @@ final class MovementController
         {
             startDecision = "released-npc-arrival";
         }
-        if (!followingCombat && npcApproach != null && observedApproachDestination != null && client.getLocalDestinationLocation() == null)
+        // A destination can first appear with the server step after the short
+        // click-observation window. That checked authority is evidence for the
+        // current native action, not permission to revive input or guess range.
+        if (!followingCombat && npcApproach == null && nativeApproach != null && !input.pending() &&
+            observedApproachDestination == null && !actionOrEffect && config.responsiveStarts() &&
+            nativeApproach.acceptsLate(client.getLocalDestinationLocation(), !previousAuthority.equals(authoritative), now))
+        {
+            LocalPoint published = client.getLocalDestinationLocation();
+            observedApproachDestination = published;
+            LocalPoint goal = approachGoal(authoritative, published);
+            MovementPath refined = path.refineConfirmedApproach(goal, runEnabled(), now, adjacentApproach(published));
+            if (refined != null) { path = refined; startDecision = "observed-native-approach-authority"; }
+        }
+        if (!followingCombat && (npcApproach != null || objectApproach != null || nativeApproach != null) &&
+            observedApproachDestination != null && client.getLocalDestinationLocation() == null)
         {
             // Native input can withdraw the flag one render before the final
             // authoritative endpoint arrives. Retire extension immediately, but
@@ -521,11 +568,14 @@ final class MovementController
             path.replacement(false);
             if (!previousAuthority.equals(authoritative) || nativePoint.equals(authoritative) && !path.awaitingNpcRunPair())
             {
+                String completed = objectApproach != null ? "completed-native-object-approach" :
+                    npcApproach != null ? "completed-native-npc-approach" : "completed-native-approach";
                 path.cancel(); input.clear();
                 approachGoal = authoritative;
                 observedApproachDestination = null;
                 npcApproach = null; npcPreview = false;
-                startDecision = "completed-native-npc-approach";
+                nativeApproach = null;
+                startDecision = completed;
             }
         }
         if (!config.responsiveStarts())
@@ -534,6 +584,7 @@ final class MovementController
             clearCombat();
             clearCombatWalk();
             path.cancel(); input.clear(); observedApproachDestination = null;
+            nativeApproach = null;
             npcApproach = null; npcPreview = false;
         }
         boolean ownedWalk = (combatWalk || walkInput) && walkEffectsAllowed && previewPoseAllowed();
@@ -548,6 +599,7 @@ final class MovementController
                 path.cancel();
             }
             path.replacement(false); input.clear(); observedApproachDestination = null;
+            nativeApproach = null;
             npcApproach = null; npcPreview = false;
         }
         if (followingCombat && (effect || player.getAnimation() != -1 &&
@@ -558,16 +610,27 @@ final class MovementController
         if (player.getAnimation() != -1 && !ownedWalk) { yellowFacing = preserveFacing = facingSettled = false; }
         tryStart(now, authoritative);
         LocalPoint destination = client.getLocalDestinationLocation();
+        // Object flags can name the occupied footprint, while the checked
+        // itinerary ends at its accessible perimeter. Pace toward that endpoint,
+        // not the unwalkable object tile, once this click owns the publication.
+        LocalPoint arrivalDestination = objectApproach != null && objectApproach.contains(destination) &&
+            !input.pending() && destination.equals(observedApproachDestination) ? approachGoal : destination;
         // Conservative attacks still use native approach steps. While their
         // observed flag remains onward, share the confirmed run's small reserve
         // instead of publishing idle between pairs; actions/arrival release it.
-        boolean continuingRun = (!interactionApproach || followingCombat && !npcApproach.movingCombat()) &&
+        // Every native-only world input shares confirmed publication pacing:
+        // item/widget-on-actor, player options, ground items and world entities
+        // can all walk/run without an immediate usable destination. Specialized
+        // NPC/combat forecasts retain their own staging/trailing policies.
+        boolean nativeMovement = !interactionApproach || npcApproach == null || followingCombat && !npcApproach.movingCombat();
+        boolean continuingRun = nativeMovement &&
             (!actionOrEffect || ownedWalk) && !input.pending() &&
-            runEnabled() && MovementPath.sameView(destination, authoritative) && !destination.equals(authoritative) &&
+            (MovementPath.sameView(arrivalDestination, authoritative) && !arrivalDestination.equals(authoritative) ||
+                interactionApproach && destination == null && approachGoal == null) &&
             !nativePoint.equals(authoritative);
         path.advance(now, continuingRun, config.catchUp() ? config.catchUpPercent() : 0,
             config.slowAhead() ? config.slowAheadPercent() : 0,
-            destination,
+            arrivalDestination,
             config.slowArrival() ? new ArrivalPacing(config.arrivalFirstTiles(), config.arrivalFinalTiles(),
                 config.arrivalFirstSpeed(), config.arrivalFinalSpeed()) : ArrivalPacing.OFF);
         boolean travelled = path.turnFraction() > 0;
@@ -599,7 +662,7 @@ final class MovementController
         boolean moving = path.moving();
         boolean posedMoving = gait.present(moving, path.presentationRunning(), path.finished() && "confirmed".equals(path.phase()),
             MovementPath.sameView(destination, authoritative) && !destination.equals(authoritative),
-            !nativePoint.equals(authoritative), !interactionApproach || followingCombat, !actionOrEffect, now);
+            !nativePoint.equals(authoritative), nativeMovement || followingCombat, !actionOrEffect, now);
         if (posedMoving) { preserveFacing = false; facingSettled = false; }
         else if (yellowFacing && !preserveFacing)
         {
@@ -647,6 +710,33 @@ final class MovementController
         LocalPoint previousClickDestination = !interactionApproach && path.moving() && client.getGameCycle() > clickCycle
             ? path.clickedDestination() : null;
         LocalPoint destination = input.destination(client.getLocalDestinationLocation(), now, generation, plane, previousClickDestination);
+        if (interactionApproach && input.pending() && !input.released(now,generation,plane))
+        {
+            startDecision = "settling-click";
+            return;
+        }
+        if (interactionReplacementPending && (destination != null || input.pending() && input.released(now,generation,plane)))
+        {
+            path.replacement(true);
+            interactionReplacementPending = false;
+        }
+        if (destination == null && input.pending() && nativeApproach != null && nativeApproach.hasIntent())
+        {
+            LocalPoint goal = nativeApproach.intentGoal(path.confirmed(),this::canStep);
+            MovementPath next = goal == null ? null : path.anticipateNativeIntent(goal,runEnabled(),now,
+                nativeApproach.min,nativeApproach.max,nativeApproach.reserve);
+            input.clear();
+            if (next != null)
+            {
+                path = next; nativeIntentPreview = true;
+                startDecision = "started-native-intent";
+                return;
+            }
+            // Unsupported/adjacent/blocked targets retain checked native timing.
+            path.cancel();
+            startDecision = "native-intent-unavailable";
+            return;
+        }
         if (npcApproach != null && npcApproach.ordinaryOption() && destination != null &&
             !npcApproach.acceptsDestination(destination)) { destination = null; }
         if (input.pending() && npcApproach != null && npcApproach.atCounterStartBoundary(authoritative) &&
@@ -663,7 +753,7 @@ final class MovementController
             return;
         }
         if (destination != null && interactionApproach && npcApproach == null &&
-            (interactionTarget != null || objectApproach != null) && path.moving() &&
+            (interactionTarget != null || objectApproach != null || nativeApproach != null) && path.moving() &&
             !path.canAnticipateContinuation() && config.responsiveStarts() && owner.getAnimation() == -1 &&
             !presentation.hasSpotAnimation())
         {
@@ -738,6 +828,13 @@ final class MovementController
         }
         if (destination == null)
         {
+            if (wasPending && nativeApproach != null && npcApproach == null && objectApproach == null && interactionTarget == null)
+            {
+                // Native-only targeting provides no provisional reach. Do not
+                // keep following the preceding Walk while waiting for its flag.
+                // cancel() preserves all checked confirmed debt and its fraction.
+                path.cancel();
+            }
             if (input.settling()) { startDecision = "settling-click"; }
             else if (wasPending && !input.pending())
             {
@@ -747,6 +844,12 @@ final class MovementController
             return;
         }
         if (!config.responsiveStarts() || !previewPoseAllowed() || !previewEffectsAllowed()) { return; }
+        // Destination observation belongs to the click, even when its first
+        // route cannot be built. A later native refinement must still be seen.
+        if (interactionApproach && npcApproach == null && (interactionTarget != null || objectApproach != null || nativeApproach != null))
+        {
+            observedApproachDestination = destination;
+        }
         if (!provisionalNpc)
         {
             npcPreview = false;
@@ -859,6 +962,25 @@ final class MovementController
     {
         if (!interactionApproach) { return; }
         LocalPoint published = client.getLocalDestinationLocation();
+        if (nativeIntentPreview)
+        {
+            if (nativeApproach != null && nativeApproach.newlyPublished(published))
+            {
+                nativeIntentPreview = false;
+                path.nativeIntentDestination();
+                // Preserve the original prediction deadlines during handoff.
+                MovementPath refined = path.retargetApproachDestination(published,runEnabled(),now,adjacentApproach(published));
+                observedApproachDestination = published; approachGoal = published;
+                if (refined != null) { path = refined; startDecision = "matched-native-intent-destination"; }
+                else { path.cancel(); startDecision = "native-approach-recovery"; }
+            }
+            else if (nativeApproach == null || !nativeApproach.sameFootprint())
+            {
+                path.cancel(); nativeIntentPreview = false;
+                startDecision = "native-intent-target-changed";
+            }
+            return;
+        }
         if (npcApproach != null && npcApproach.ordinaryOption() && published != null &&
             !npcApproach.acceptsDestination(published)) { return; }
         if (npcPreview && npcApproach != null)
@@ -919,7 +1041,16 @@ final class MovementController
             }
             return;
         }
-        if (!"preview".equals(path.phase())) { return; }
+        if (!"preview".equals(path.phase()))
+        {
+            if (npcApproach == null && (interactionTarget != null || objectApproach != null || nativeApproach != null))
+            {
+                LocalPoint goal = approachGoal(path.confirmed(), published);
+                MovementPath refined = path.refineConfirmedApproach(goal, runEnabled(), now, adjacentApproach(published));
+                if (refined != null) { path = refined; startDecision = "resumed-native-approach"; }
+            }
+            return;
+        }
         if (published.equals(path.clickedDestination())) { return; }
         if (npcApproach != null && npcApproach.combat != null && path.holdCombatForecast(published, now))
         {
@@ -927,7 +1058,7 @@ final class MovementController
             return;
         }
         boolean checkedApproach = npcApproach != null && npcApproach.combat == null ||
-            npcApproach == null && (interactionTarget != null || objectApproach != null);
+            npcApproach == null && (interactionTarget != null || objectApproach != null || nativeApproach != null);
         MovementPath redirected = checkedApproach
             ? path.retargetApproachDestination(published, runEnabled(), now,
                 npcApproach == null && adjacentApproach(published))
@@ -982,6 +1113,11 @@ final class MovementController
 
     private void offerCombat(long now)
     {
+        if (input.pending())
+        {
+            if (!input.released(now,generation,plane)) { return; }
+            if (npcApproach.movingCombat()) { input.clear(); }
+        }
         if (!npcApproach.movingCombat()) { combatContinuity.attempted(); return; }
         boolean moved = combatContinuity.moved;
         MovementPath next = path.followCombat(npcApproach, runEnabled(), now,
@@ -1000,6 +1136,8 @@ final class MovementController
 
     private void clearPresentationOwnership()
     {
+        nativeApproach = null;
+        nativeIntentPreview = interactionReplacementPending = false;
         interactionFacing = null;
         walkInput = false;
         followPresentation = null;

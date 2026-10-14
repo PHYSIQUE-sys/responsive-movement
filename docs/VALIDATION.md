@@ -16,6 +16,81 @@ Movement** plugin must be disabled; the new plugin declares that conflict.
 
 ## Current status (supersedes dated pending notes below)
 
+**2026-10-14/15 23:59 interaction-start bookmarks: user-confirmed working well; 784 tests pass.**
+The user says this correction seems to have fixed everything they were having
+issues with, confirming the preceding native-Use fix resolved stopping/starting mid-run,
+then supplies startup/moving-click delays at #386/#1397/#2473/#3607. All eight
+interaction windows are reviewed. Eligible Use/Trade targets now supply bounded
+click-time footprint forecasts through MovementPath, preserving exact fractions
+and real confirmed prefixes. Solid one-sided counters retain a conservative
+boundary; Cast/player Attack keep their outer range policies. Native destinations
+supersede provisional forecasts without deadline renewal. Short seeds retain a
+single-clock reserve instead of publishing an early idle.
+Movement delay now gates world-interaction starts/handoffs as well as Walk: 0 has
+no deliberate wait; positive values wait for the configured time or an earlier
+GameTick, while the previous run can continue. The persisted key/default stay
+unchanged. Seven new tests cover 24 recorded replays, delay/tick release, idle/
+moving starts, short seeds, native destination parity, collision/target/range/
+primary-clock guards. Full build passes **784 tests, zero failures/errors/skips**.
+See [the scoped evidence and user checks](BOOKMARK-NATIVE-INTENT-2359.md). This
+general report supersedes the entry's initial pending status for the user's tested
+experience; it does not separately validate every renderer/input combination.
+
+**2026-10-14 native Use bookmarks #45478 onward: mid-run correction user-confirmed; 777-test checkpoint passed.**
+The new report shows late item-on-NPC/player flags falling outside the short input
+window, intermediate confirmed-only holds, and an obsolete Walk preview surviving
+moving Use input. Native-only actor/widget/player/world-entity inputs now share the
+checked interaction refinement and confirmed-publication pacing. First late flags
+require new checked player authority within the original bounded click evidence;
+missing flags do not imply NPC/item/spell range. Old previews retire with confirmed
+prefixes and fractions preserved. Ordinary NPC/combat/Follow policies retain their
+own handling. Fourteen new tests cover nine captured Use/object movements, all 36 world
+input opcodes, every speed increment, four cadences, live settings, and evidence/
+collision/lifetime/cleanup guards. Full build passes **777 tests, zero failures/errors/
+skips**; `git diff --check` passes. See [evidence and user checks](BOOKMARK-NATIVE-USE-2158.md).
+The user subsequently confirms this fixed the stopping/starting mid-run. The
+separate startup and moving-click wait is addressed by the newer entry above;
+earlier confirmations remain the baseline for their tested situations.
+
+**2026-10-14 20:27--20:33 latest bookmarks: 17 reviewed; follow-up user-confirmed working well; 763 tests pass.**
+Delayed forward Walk authority now reuses the checked local departure instead of an
+obsolete construction corner. An owned fresh Walk can retain its bounded preview
+through perpendicular preceding-click authority without deadline renewal. Local
+square/knight turn controls retain useful tangent continuity inside the latest-goal
+interval, avoiding an old-axis bow. Original occupied proofs and native interaction
+guards remain preserved. A new 64,340-scenario sweep/replay set covers all 96 speeds
+at fixed fractions, all pacing toggle combinations, stage/strength extremes, multiple
+cadences, every marked sequence, scene/minimap input and live changes. Full build
+passes **763 tests, zero failures/errors/skips**. Bounded expiry/recovery remains
+distinct from an input-delay bug. The user confirms these changes are working well;
+that report confirms the tested experience, not every possible collision layout or
+renderer combination. See [the evidence and checks](BOOKMARK-LATEST-AUTHORITY-20261014.md).
+
+**2026-10-14 19:05--19:22 Walk-detour bookmarks: user-confirmed doing pretty well; 752-test checkpoint passed.**
+The user's subsequent report supersedes the correction's initial pending status.
+Seven supplied bookmarks were found and their surrounding Walk replacements reviewed;
+#12051 had already rotated out. Old-corner connectors can now bypass an obsolete
+construction point only through fully proven local squares/shared corridor crossings.
+Reversal selection avoids unnecessary side excursions when a bounded direct candidate
+exists; direct square curves cannot borrow a wrong-way preceding-click tangent.
+The two off-setting captures reproduce the connector family with arrival/ahead slowdown
+off, so arrival pacing alone is not its cause. A new 45,312-scenario sweep covers all
+96 speeds, pacing on/off combinations, stage/strength extremes, walk/run forecasts,
+scene/minimap inputs, smoothing and live settings changes. Full build passes **752 tests,
+zero failures/errors/skips**. Earlier circle/knight, collision, expiry and interaction
+guards remain covered. See [the scoped evidence and retest notes](BOOKMARK-WALK-DETOURS-20261014.md).
+
+**2026-10-14 interaction-arrival gait and #499 handoff: implemented; full build passes; awaiting in-game confirmation.**
+Object footprint flags now use their checked perimeter endpoint for arrival
+pacing. Final confirmed object/NPC travel retains the configured slowdown after
+the native flag clears; a slow confirmed-publication remainder uses the native
+walk pose. The #499 moving Attack no longer treats authority behind its occupied
+knight as permission to keep the preceding Walk's speculative suffix.
+Four regressions cover these cases alongside the existing full settings, combat,
+confirmed-prefix and door/object suites. The 13:40 #172647 bookmark and subsequent
+markers have rotated out and need an archived copy or replacement capture for
+exact review. See [the evidence and retest notes](BOOKMARK-INTERACTION-ARRIVAL.md).
+
 **2026-10-14 bundled movement profiles: implemented; awaiting sidebar confirmation.**
 The profiles list now includes **Default** and the user's saved **True Tile**
 snapshot. True Tile uses speed 5.9, arrival first length 0.2 / speed 50%, final

@@ -81,7 +81,9 @@ public class BankerTalkReplayTest
     static Fixture fixture(LocalPoint start) throws Exception
     {
         Fixture f = new Fixture(start.getX(), start.getY(), tile(51, 49).getX(), tile(51, 49).getY());
-        f.speed = 1.3; f.smoothing = 60;
+        // Historical constant-rate geometry replay, with no requested delay.
+        // Delay/tick-release behavior is covered separately for all input paths.
+        f.speed = 1.3; f.smoothing = 0;
         f.npcActions = new String[] {"Talk-to", null, "Bank"};
         for (int[] column : f.flags) { Arrays.fill(column, CollisionDataFlag.BLOCK_MOVEMENT_FULL); }
         for (String line : lines("red-click-1820.txt"))

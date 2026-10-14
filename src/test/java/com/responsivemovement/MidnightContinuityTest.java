@@ -209,7 +209,8 @@ public class MidnightContinuityTest
     static Fixture yew(int x, int y) throws Exception
     {
         Fixture f = new Fixture(x, y, 7000, 7000);
-        f.speed = 1.2; f.smoothing = 60;
+        // Isolate the recorded geometric handoffs from the now-shared delay.
+        f.speed = 1.2; f.smoothing = 0;
         for (int[] column : f.flags) { Arrays.fill(column, CollisionDataFlag.BLOCK_MOVEMENT_FULL); }
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(
             MidnightContinuityTest.class.getResourceAsStream("midnight-yew-map.txt"), StandardCharsets.UTF_8)))

@@ -272,8 +272,11 @@ public class CombatVisualContinuityTest
             selectors(f); f.smoothing = 0;
             f.controller.worldInteraction(f.event(MenuAction.WIDGET_TARGET_ON_NPC, expired ? "Cast" : "Use"));
             f.frame(expired ? 2000 : 80);
+            LocalPoint beforeEffect = f.controller.position();
             f.animation = 3001; f.spot = true; f.interacting = null;
             f.controller.walkClick(); f.destination = p(6976, 5824); f.frame(expired ? 2020 : 100); f.frame(expired ? 2040 : 120);
+            assertTrue("effects cannot grant further preview travel",f.controller.position().getX() <= beforeEffect.getX());
+            for (int ms = expired ? 2060 : 140; ms <= (expired ? 3000 : 1200); ms += 20) { f.frame(ms); }
             assertEquals(f.start, f.controller.position()); f.controller.close();
         }
     }

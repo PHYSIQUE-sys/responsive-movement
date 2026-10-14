@@ -16,6 +16,7 @@ final class MovementInput
     private boolean ready;
     private boolean observedDestination;
     private boolean tickReleased;
+    private boolean intentObserved;
 
     void click(LocalPoint previous, long now, int generation, int level)
     {
@@ -36,6 +37,7 @@ final class MovementInput
         ready = false;
         observedDestination = false;
         tickReleased = false;
+        intentObserved = false;
         settleNanos = Math.max(0, Math.min(300, smoothingMillis)) * 1_000_000L;
     }
 
@@ -79,17 +81,24 @@ final class MovementInput
         if (settleNanos > 0 && now >= clicked) { tickReleased = true; }
     }
 
+    /** Target geometry is separate from the first latched native destination. */
+    void intent() { if (pending) { intentObserved = true; } }
+    boolean released(long now, int generation, int level)
+    {
+        return validObservation(now, generation, level) && (tickReleased || now - clicked >= settleNanos);
+    }
+
     private boolean validObservation(long now, int generation, int level)
     {
         if (!pending) { return false; }
-        if (generation != scene || level != plane || now - clicked > (destination == null ? 100_000_000L : 900_000_000L))
+        if (generation != scene || level != plane || now - clicked > (destination == null && !intentObserved ? 100_000_000L : 900_000_000L))
         {
             clear(); return false;
         }
         return true;
     }
 
-    void clear() { pending = ready = observedDestination = tickReleased = false; beforeDestination = destination = null; replacementObserved = false; }
+    void clear() { pending = ready = observedDestination = tickReleased = intentObserved = false; beforeDestination = destination = null; replacementObserved = false; }
     boolean pending() { return pending; }
     boolean settling() { return pending && destination != null && !ready; }
     /** Observation start time of the current click. */

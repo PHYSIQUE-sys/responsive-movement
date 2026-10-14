@@ -183,7 +183,22 @@ checks, including gates, region crossings, minimap input, and interaction approa
 The user reports substantially smoother circles and improved repeated knights.
 The latest user confirmation says the plugin is working well, including the recent
 native Walk observation and startup-timing fixes, and supersedes older pending notes.
+The user also reports the 19:05--19:22 Walk-detour corrections are doing pretty well.
+The newest seventeen bookmarked movements had a separate authority-join/turning
+follow-up; the user subsequently confirms it is working well. See the current
+validation status for the scoped evidence and automated verification.
 The user also confirms the speed/camera/overhead/combat review fixes are working well.
+The subsequent native Use report from bookmark **#45478 onward** has a shared
+item/widget/player-interaction continuity correction. Its **777-test** build covers
+the recorded movements, all supported world-input opcodes, speed/cadence matrices,
+and evidence/recovery guards; the user confirms it fixed stopping/starting mid-run.
+See [the scoped findings and checks](docs/BOOKMARK-NATIVE-USE-2158.md).
+The subsequent 23:59 bookmarks have a click-time interaction-start correction:
+eligible Use/Trade, player Attack and distant Cast forecasts now use their own
+bounded target evidence, and **Movement delay** applies to world interactions
+as well as Walk. Its **784-test** build passes; the new startup/delay correction
+is now user-confirmed working well; the user says it seems to have fixed everything
+they were having issues with. See [evidence and checks](docs/BOOKMARK-NATIVE-INTENT-2359.md).
 The user confirms the compact profiles-only sidebar is working well apart from a
 top-spacing issue. That spacing correction passes automated regressions and awaits
 visual confirmation; see the current validation status.

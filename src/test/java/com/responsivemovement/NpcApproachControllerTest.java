@@ -933,7 +933,7 @@ public class NpcApproachControllerTest
         private int retainedSpotId = -1, retainedSpotStart = -1;
         int builtIdle = -1, builtPose = -1, builtAction = -1, builtActionFrame = -1, modelBuilds;
         double speed = 1;
-        int smoothing = 50;
+        int smoothing = 0;
         int turnSpeed = 30;
         final int[][] flags = new int[104][104];
         final int[][][] heights = new int[4][105][105];
@@ -970,6 +970,7 @@ public class NpcApproachControllerTest
                     case "getId": return 623;
                     case "getWorldView": return view;
                     case "getWorldLocation": return area.toWorldPoint();
+                    case "getWorldArea": return area;
                     case "isDead": return npcDead;
                     default: throw new AssertionError("followed player: " + method);
                 }
@@ -1018,7 +1019,7 @@ public class NpcApproachControllerTest
                 {
                     case "getType": return action;
                     case "getOption": return option;
-                    case "getIdentifier": return action.name().startsWith("PLAYER_") ? 623 : 25398;
+                    case "getIdentifier": return action.name().startsWith("PLAYER_") || action.name().endsWith("_ON_PLAYER") ? 623 : 25398;
                     case "getParam0": case "getParam1": return 0;
                     case "getWorldViewId": return 0;
                     case "getNpc": return npc;

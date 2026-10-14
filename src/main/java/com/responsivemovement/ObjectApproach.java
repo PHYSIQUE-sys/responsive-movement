@@ -109,8 +109,10 @@ final class ObjectApproach
 
     LocalPoint goal(LocalPoint from, LocalPoint published, BiPredicate<LocalPoint, LocalPoint> collision)
     {
-        if (!contains(published) || wallBoundary()) { return goal(from, published); }
+        if (!contains(published)) { return published; }
         if (!MovementPath.sameView(from, min) || !MovementPath.tileCenter(from) || contains(from)) { return null; }
+        // Walls need the same reachable-perimeter search as solid footprints:
+        // a geometrically near side can be sealed behind the wall itself.
         // Coordinate distance can prefer a side whose checked route bends past
         // an equally near, earlier perimeter. Use the shared cardinal-first
         // search to choose a reachable boundary, without guessing interaction reach.

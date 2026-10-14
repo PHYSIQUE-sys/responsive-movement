@@ -116,6 +116,33 @@ The retained rules include:
   Nine new regressions pass with the full **507-test** build; in-game confirmation
   is pending. See `agent-work/door-gate-1245/CHECKPOINT.md` for evidence limits.
 - Current authoritative coordinates remain separate from rendered coordinates.
+- Native-only item/widget-on-actor, player-option and world-entity input captures
+  `NativeApproach`: view/plane, destination baseline, bounded click evidence and one
+  indexed actor identity where applicable, with no route or movement clock. Native
+  destination changes share the existing checked interaction joins. A first flag
+  appearing after the input window requires new checked player authority within
+  the original 1.8-s evidence bound; input observation is not rearmed. Missing flags
+  never imply item/spell reach. Native-only confirmed movement shares publication
+  pacing and bounded gait continuity with walking/running and absent flags. Its old
+  Walk preview retires through checked cancellation while preserving confirmed debt
+  and fractional position. Ordinary captured NPC/combat/Follow policies retain their
+  separate evidence/reserves. See `docs/BOOKMARK-NATIVE-USE-2158.md` for the #45478
+  onward recordings, 777-test verification and subsequent mid-run user confirmation.
+- The 23:59 startup follow-up extends `NativeApproach` with immutable clicked
+  footprint evidence for Use/Trade, conservative Cast, and cache-profiled player
+  Attack. `MovementPath.anticipateNativeIntent` reuses checked forecast/join/queue
+  construction from the exact displayed fraction, preserving confirmed prefixes
+  and prediction horizons. A short seed reuses startup easing only after its
+  confirmed prefix drains. Native destination publication releases the provisional
+  reserve and shares normal refinement; moving/invalid targets retire it without
+  a target-follow route watcher. Solid one-sided Use counters keep a conservative
+  three-tile boundary; actual stopping/reach remains native. World interactions
+  now share MovementInput's configured wait/early GameTick release, with the
+  existing route retained during a positive wait and the first native flag latched
+  independently of target geometry. See `docs/BOOKMARK-NATIVE-INTENT-2359.md` for
+  eight recordings, 784-test verification and the remaining user check. The earlier
+  mid-run pacing correction and the startup/delay follow-up are user-confirmed
+  working well for the user's tested experience; see the bookmark note for scope.
 - Ordinary object/ground-item options capture immutable `InteractionTarget`
   identity (action/ID/tile/view/plane), separate from destination evidence. A
   matching repeated click retains the original approach and observation/deadlines,
@@ -521,6 +548,36 @@ and blocked-goal/expiry guards. Original click/server times remain fixed in cont
 replays; slow displays drain legitimate confirmed debt before final holding is checked.
 No additional movement implementation change was needed. This is synthetic/replay
 settings coverage, not native-renderer or every-percentage visual confirmation.
+
+The 2026-10-14 19:05--19:22 Walk bookmarks add `joinWalkDeparture` to fresh-click
+connector construction. A first cardinal/diagonal step can join from the visible
+fraction through a fully checked square, or through its checked shared boundary
+with the occupied corridor, instead of visiting an obsolete old-click corner.
+The original logical itinerary, confirmation/pending-origin state, forecast bounds
+and clock are retained. Reversals can prefer an already checked candidate contained
+in the display/latest-goal interval within the existing one-tile allowance. A direct
+square's local cubic also keeps its controls in that interval, preventing an old
+tangent from adding a sideways excursion. Unsupported proofs retain checked corners;
+whole-knight curves and still-forward cardinal policies retain their existing handling.
+The new settings/replay sweep and all prior suites pass **752 tests**; the user
+subsequently reports these changes are doing pretty well. See
+`docs/BOOKMARK-WALK-DETOURS-20261014.md` for the seven reviewed markers, missing #12051,
+preserved evidence limits and 45,312 new settings scenarios.
+
+The newest seventeen 20:27--20:33 bookmarks extend this checked departure to
+`alignWalkAuthority`'s forward join. Its Walk-only `joinForecast` candidate keeps
+the occupied proof whenever it already contains the straight subsegment, preserving
+middle-tile/confirmed-prefix evidence. An owned `walkForecast` can retain an off-route
+perpendicular preceding-click endpoint through the existing stale clipping, after
+matching logical authority is considered; it updates authority without renewing
+prediction time. Native approach joins retain their own evidence and guards.
+Direct square/knight cubic controls are projected into the display/latest-goal
+interval and revalidated against the original convex corridor/gap, retaining the
+useful tangent component and single arc/facing clock. The 64,340 new sweep/replay
+cases and all prior suites pass **763 tests**. The user subsequently confirms this
+follow-up is working well; this covers their tested experience, not every collision
+layout or renderer. `docs/BOOKMARK-LATEST-AUTHORITY-20261014.md` records all markers,
+the sparse-native/collision evidence limits and the retained expiry cases.
 
 The 2026-09-28 evening route corrections refine only these fresh-click
 connections. Equal max-axis travel scores use geometric distance as a tie-break,

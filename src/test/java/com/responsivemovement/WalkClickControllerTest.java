@@ -148,6 +148,7 @@ public class WalkClickControllerTest
     public void repeatedPendingClicksKeepTheCapturedDestinationWithTheSameSettlingWindow()
     {
         Fixture scene = fixture(), minimap = fixture();
+        scene.smoothing = minimap.smoothing = 50;
         LocalPoint target = p(6592, 6592);
         walk(scene, false, target, 0); walk(minimap, true, target, 0);
         scene.frame(0); minimap.frame(0);

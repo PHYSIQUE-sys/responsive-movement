@@ -195,7 +195,7 @@ public class DoorGateContinuityTest
     }
 
     @Test
-    public void nativeDestinationsOutsideTheWallRemainExactAndBlockedStartsWaitForAuthority()
+    public void nativeDestinationsOutsideTheWallRemainExactAndBlockedNearSidesUseCheckedPerimeters()
     {
         Fixture f = gate(9536);
         ObjectApproach wall = ObjectApproach.capture(f.view,
@@ -208,7 +208,14 @@ public class DoorGateContinuityTest
         f.flags[30][74] |= CollisionDataFlag.BLOCK_MOVEMENT_FULL;
         f.controller.worldInteraction(f.sceneEvent(MenuAction.GAME_OBJECT_FIRST_OPTION, "Close", 1559, 30, 73));
         f.destination = p(9408);
-        for (int ms = 0; ms <= 1200; ms += 20) { f.frame(ms); assertEquals(f.start, f.controller.position()); }
+        f.frame(0); f.frame(20);
+        assertNotEquals("a blocked nearest tile does not exclude every reachable side", f.start, f.controller.position());
+        for (int ms = 40; ms <= 3000; ms += 20)
+        {
+            f.frame(ms);
+            assertNotEquals("never speculate into the wall anchor", p(9408), f.controller.position());
+        }
+        assertEquals("unconfirmed detour still expires", f.start, f.controller.position());
         f.controller.close();
     }
 
