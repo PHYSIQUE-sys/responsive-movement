@@ -32,6 +32,8 @@ final class NpcApproach
     private final int index;
     private final int id;
     private final LocalPoint previousDestination;
+    private LocalPoint goalOrigin;
+    private LocalPoint checkedGoal;
 
     private NpcApproach(NPC npc, WorldView view, WorldArea area, LocalPoint min, LocalPoint max,
         LocalPoint previousDestination, CombatApproach combat, boolean bankOrExchange, boolean bankServiceTalk)
@@ -226,7 +228,19 @@ final class NpcApproach
 
     LocalPoint goal(LocalPoint from, BiPredicate<LocalPoint, LocalPoint> collision)
     {
-        return ordinaryOption() || adjacentCombat() ? adjacentGoal(from, min, max, collision) : goal(from, min, max, collision);
+        if (!ordinaryOption() && !adjacentCombat()) { return goal(from, min, max, collision); }
+        if (from == null) { return null; }
+        // Cache only goal selection, including an unavailable goal, for this
+        // captured footprint/origin. Pending input must not run a bounded search
+        // every render. MovementPath still rechecks all travel against live
+        // collision. New input, authority origin, or refreshed combat footprint
+        // naturally selects again; no route queue or clock lives here.
+        if (!from.equals(goalOrigin))
+        {
+            checkedGoal = adjacentGoal(from, min, max, collision);
+            goalOrigin = from;
+        }
+        return checkedGoal;
     }
 
     /** Checked cardinal-side staging for adjacent ordinary interactions, not the diagonal ring. */
@@ -260,9 +274,16 @@ final class NpcApproach
                 best = side; distance = length; geometry = travel;
             }
         }
-        // A blocked approach retains only the original clear prefix, never a
-        // speculative detour around an occupied target or guessed interaction range.
-        return best == null ? goal(from, min, max, collision) : best;
+        if (best != null) { return best; }
+        // A prefix toward a blocked direct line can point into a dead end, or
+        // contain no step at all. Find a complete checked route to the same
+        // cardinal boundary before previewing it. This runs only when building
+        // an approach, within the shared search budget; it grants no new reach,
+        // prediction time, or target-follow owner.
+        List<LocalPoint> route = MovementRoute.boundary(from, min, max, 64,
+            (a, b) -> collision.test(a, b) &&
+                !(b.getX() >= min.getX() && b.getX() <= max.getX() && b.getY() >= min.getY() && b.getY() <= max.getY()));
+        return route == null || route.isEmpty() ? null : route.get(route.size() - 1);
     }
 
     LocalPoint shortRunGoal(LocalPoint from, BiPredicate<LocalPoint, LocalPoint> collision)
@@ -285,7 +306,7 @@ final class NpcApproach
     }
 
     /** One-sided, solid counter geometry, captured once; no NPC IDs or GE coordinates. */
-    private static LocalPoint counterSide(WorldView view, LocalPoint min, LocalPoint max)
+    static LocalPoint counterSide(WorldView view, LocalPoint min, LocalPoint max)
     {
         if (!min.equals(max)) { return null; }
         CollisionData[] maps = view.getCollisionMaps();

@@ -2,6 +2,7 @@ package com.responsivemovement;
 
 import net.runelite.api.MenuAction;
 import net.runelite.api.WorldView;
+import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.events.MenuOptionClicked;
 
 /** Immutable identity for an ordinary scene interaction; never an inferred destination. */
@@ -50,5 +51,11 @@ final class InteractionTarget
         return action == MenuAction.GROUND_ITEM_FIRST_OPTION || action == MenuAction.GROUND_ITEM_SECOND_OPTION ||
             action == MenuAction.GROUND_ITEM_THIRD_OPTION || action == MenuAction.GROUND_ITEM_FOURTH_OPTION ||
             action == MenuAction.GROUND_ITEM_FIFTH_OPTION;
+    }
+
+    boolean atAnchor(LocalPoint point)
+    {
+        return point != null && point.getWorldView() == view.getId() &&
+            point.getSceneX() == x && point.getSceneY() == y;
     }
 }

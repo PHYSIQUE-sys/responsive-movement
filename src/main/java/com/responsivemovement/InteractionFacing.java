@@ -11,6 +11,7 @@ final class InteractionFacing
     private final WorldView view;
     private final int plane;
     private final NpcApproach npc;
+    private final NativeApproach nativeTarget;
     private final LocalPoint min, max;
     private long lastApproachNanos;
     private boolean arrived;
@@ -19,17 +20,33 @@ final class InteractionFacing
 
     private InteractionFacing(WorldView view, NpcApproach npc, LocalPoint min, LocalPoint max, long now)
     {
+        this(view,npc,null,min,max,now);
+    }
+
+    private InteractionFacing(WorldView view, NpcApproach npc, NativeApproach nativeTarget, LocalPoint min, LocalPoint max, long now)
+    {
         this.view = view; plane = view.getPlane(); this.npc = npc;
+        this.nativeTarget = nativeTarget;
         this.min = min; this.max = max; lastApproachNanos = now;
     }
 
     static InteractionFacing capture(WorldView view, MenuOptionClicked event, ObjectApproach object,
         NpcApproach npc, long now)
     {
+        return capture(view,event,object,npc,null,now);
+    }
+
+    static InteractionFacing capture(WorldView view, MenuOptionClicked event, ObjectApproach object,
+        NpcApproach npc, NativeApproach nativeTarget, long now)
+    {
         if (view == null || event.getMenuEntry().getWorldViewId() != view.getId()) { return null; }
         if (npc != null)
         {
             return npc.combat == null ? new InteractionFacing(view, npc, npc.min, npc.max, now) : null;
+        }
+        if (nativeTarget != null && nativeTarget.hasIntent() && nativeTarget.adjacentIntent())
+        {
+            return new InteractionFacing(view,null,nativeTarget,nativeTarget.min,nativeTarget.max,now);
         }
         MenuAction action = event.getMenuAction();
         switch (action)
@@ -49,12 +66,13 @@ final class InteractionFacing
     LocalPoint target(WorldView current, MovementPath path, boolean pending, long now, int nativeAngle, int displayedAngle)
     {
         if (retired || current != view || view.getPlane() != plane || npc != null && !npc.valid(view) ||
+            nativeTarget != null && (!nativeTarget.valid(view) || !nativeTarget.sameFootprint()) ||
             "recovery".equals(path.phase())) { retired = true; return null; }
         if (path.moving()) { lastApproachNanos = now; }
         LocalPoint at = path.position();
         int dx = Math.max(0, Math.max(min.getX() - at.getX(), at.getX() - max.getX()));
         int dy = Math.max(0, Math.max(min.getY() - at.getY(), at.getY() - max.getY()));
-        int reserve = npc == null ? 1 : npc.reserveTiles;
+        int reserve = nativeTarget != null ? nativeTarget.reserve : npc == null ? 1 : npc.reserveTiles;
         // A stopped bounded forecast farther from the target is not an arrival.
         // Native catch-up need not finish before a checked visible stopping point faces its target.
         boolean boundary = Math.max(dx, dy) <= reserve * 128 && (dx != 0 || dy != 0);
@@ -77,7 +95,7 @@ final class InteractionFacing
         {
             retired = true; return null;
         }
-        LocalPoint point = npc == null ? new LocalPoint((min.getX() + max.getX()) / 2,
+        LocalPoint point = nativeTarget != null ? nativeTarget.facingPoint() : npc == null ? new LocalPoint((min.getX() + max.getX()) / 2,
             (min.getY() + max.getY()) / 2, view.getId()) : npc.facingPoint();
         int heading = MotionMath.heading(point.getX() - at.getX(), point.getY() - at.getY());
         // Hand back only after both native and displayed facing agree; otherwise

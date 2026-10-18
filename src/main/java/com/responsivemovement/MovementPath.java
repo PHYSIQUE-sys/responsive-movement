@@ -65,10 +65,16 @@ final class MovementPath
     private double tangentX;
     private double tangentY;
     private boolean walkContinuity;
+    private boolean walkForecast;
     private boolean arrivalWalking;
     private boolean arrivalPaced;
+    private boolean publicationWalking;
     private int confirmedTripTiles;
+    private boolean confirmedArrivalTrip;
+    private boolean nativeCounterPairs;
+    private int nativeCounterReleaseIndex;
     private boolean tripEnded = true;
+    private int consecutiveSingleSteps;
 
     private static final class Leg
     {
@@ -339,9 +345,22 @@ final class MovementPath
 
     boolean counterRunAccepts(LocalPoint endpoint)
     {
+        return counterRunAccepts(endpoint, lastNanos);
+    }
+
+    boolean counterRunAccepts(LocalPoint endpoint, long now)
+    {
         if (endpoint.equals(confirmed)) { return true; }
         int previous = clickedPath.indexOf(confirmed), next = clickedPath.indexOf(endpoint);
-        return previous >= 0 && next == Math.min(previous + 2, clickedPath.size() - 1);
+        return previous >= 0 && next == Math.min(previous + 2, clickedPath.size() - 1) ||
+            pendingCounterRetarget(now) && canRetainNpcRetarget(endpoint, now) &&
+                checkedRoute(confirmed, endpoint, collision, 2) != null;
+    }
+
+    boolean pendingCounterRetarget(long now)
+    {
+        return counterNativeGoal != null && npcRetarget && confirmedClickIndex <= 0 &&
+            !invalid && !recovering && now < deadline && now < chainDeadline;
     }
 
     void retireCounterRun()
@@ -407,6 +426,9 @@ final class MovementPath
         MovementPath best = null;
         MovementPath forward = null;
         MovementPath continuous = null;
+        MovementPath directed = null;
+        double directedTravel = Double.POSITIVE_INFINITY;
+        double directedGeometry = Double.POSITIVE_INFINITY;
         double continuousScore = Double.POSITIVE_INFINITY;
         double bestDistance = Double.POSITIVE_INFINITY;
         double bestGeometry = Double.POSITIVE_INFINITY;
@@ -423,6 +445,11 @@ final class MovementPath
                     (long) (active.end.getY() - active.start.getY()) * (destination.getY() - active.end.getY()) >= 0 &&
                 !next.clickedPath.contains(active.start)) { forward = next; }
             double geometry = remainingGeometry(next);
+            if (withinGoalInterval(next, destination) && (length < directedTravel - EPS ||
+                Math.abs(length - directedTravel) <= EPS && geometry < directedGeometry - EPS))
+            {
+                directed = next; directedTravel = length; directedGeometry = geometry;
+            }
             Leg first = next.legs.peekFirst();
             double targetX = destination.getX() - x, targetY = destination.getY() - y;
             // A still-forward click need not trade its current tangent for a
@@ -447,6 +474,21 @@ final class MovementPath
             {
                 best = next; bestDistance = length; bestGeometry = geometry;
             }
+        }
+        double targetProgress = tangentX * (destination.getX() - x) + tangentY * (destination.getY() - y);
+        boolean nearForwardDiagonalEnd = targetProgress > EPS &&
+            Math.abs(active.end.getX() - active.start.getX()) == TILE &&
+            Math.abs(active.end.getY() - active.start.getY()) == TILE &&
+            Math.max(Math.abs(x - active.end.getX()), Math.abs(y - active.end.getY())) <= TILE / 4.0;
+        if (directed != null && directedTravel <= bestDistance + TILE &&
+            (targetProgress <= EPS && (authorityDeparture == null || active.corridorEnd != null &&
+                clearKnight(active.start, active.corridorEnd, collision) && !withinGoalInterval(authorityDeparture, destination)) ||
+                nearForwardDiagonalEnd && authorityDeparture != null && !withinGoalInterval(authorityDeparture, destination)))
+        {
+            // Even a forward click can leave authority behind one axis of the
+            // display. Do not prefer its old row/column over an equally bounded
+            // checked candidate contained between the displayed fraction and goal.
+            return directed;
         }
         if (authorityDeparture != null && remainingTravel(authorityDeparture) <= bestDistance + TILE)
         {
@@ -627,6 +669,7 @@ final class MovementPath
         BiPredicate<LocalPoint, LocalPoint> reversible = (a, b) -> collision.test(a, b) && collision.test(b, a);
         if (checkedRoute(confirmed, anchor, reversible, next.forecastSteps() + 1) == null &&
             MovementRoute.find(confirmed, anchor, next.forecastSteps() + 1, reversible) == null) { return null; }
+        MovementPath departure = joinWalkDeparture(connector, next);
         Leg first = next.legs.peekFirst();
         boolean alreadyOnRoute = first != null && (onSegment(first.start, first.end) ||
             insideCheckedCorridor(first, x, y) && clearCorridor(first.start, first.corridorEnd, collision));
@@ -650,12 +693,112 @@ final class MovementPath
         // opposite step is still in flight. Keep that route pending so the
         // existing bounded stale-tick handling cannot append a spurious return.
         next.pendingWalkConfirmation();
+        if (departure != null && remainingTravel(departure) <= remainingTravel(next) + EPS &&
+            remainingGeometry(departure) < remainingGeometry(next) - EPS) { return departure; }
         return next;
+    }
+
+    /** Bypass an obsolete corner only inside independently proven local convex regions. */
+    private MovementPath joinWalkDeparture(Leg occupied, MovementPath forecast)
+    {
+        return joinWalkDeparture(occupied, forecast, false);
+    }
+
+    private MovementPath joinWalkDeparture(Leg occupied, MovementPath forecast, boolean authorityJoin)
+    {
+        return joinDeparture(occupied, forecast, authorityJoin, true);
+    }
+
+    private MovementPath joinDeparture(Leg occupied, MovementPath forecast, boolean authorityJoin, boolean walk)
+    {
+        LocalPoint goal = forecast.clickedDestination();
+        // Still-forward cardinal clicks retain the established corner policy.
+        // Occupied diagonal/knight regions can prove a direct side departure.
+        if (goal == null || !authorityJoin && occupied.corridorEnd == null &&
+            tangentX * (goal.getX() - x) + tangentY * (goal.getY() - y) > EPS) { return null; }
+        Leg first = forecast.legs.peekFirst();
+        if (first == null || first.corridorEnd != null) { return null; }
+        LocalPoint anchor = first.start;
+        int dx = first.end.getX() - anchor.getX(), dy = first.end.getY() - anchor.getY();
+        List<LocalPoint> corners = new ArrayList<>();
+        if (Math.abs(dx) == TILE && Math.abs(dy) == TILE) { corners.add(anchor); }
+        else if (Math.abs(dx) + Math.abs(dy) == TILE)
+        {
+            for (int side : new int[] {-1, 1})
+            {
+                corners.add(new LocalPoint(anchor.getX() + (dy == 0 ? 0 : side * TILE),
+                    anchor.getY() + (dx == 0 ? 0 : side * TILE), anchor.getWorldView()));
+            }
+        }
+        MovementPath best = null;
+        double bestTravel = Double.POSITIVE_INFINITY;
+        for (LocalPoint corner : corners)
+        {
+            if (!clearTurnSquare(corner, first.end, collision)) { continue; }
+            // Keep the occupied proof when it already contains this complete
+            // straight join. Replacing a knight with a smaller construction
+            // square would lose its middle-tile authority/prefix evidence.
+            boolean contained = occupied.corridorEnd != null && insideCheckedCorridor(occupied, x, y) &&
+                insideCheckedCorridor(occupied, first.end.getX(), first.end.getY());
+            Leg departure = contained ? new Leg(occupied.start, first.end, first.running, first.firstOfPair, occupied.corridorEnd) :
+                new Leg(corner, first.end, first.running, first.firstOfPair, first.end);
+            departure.headingX = departure.headingY = Double.NaN;
+            LocalPoint crossing = insideCheckedCorridor(departure, x, y) ? null :
+                sharedCorridorCrossing(occupied, departure, first.end);
+            if (crossing == null && !insideCheckedCorridor(departure, x, y)) { continue; }
+            MovementPath next = joinedWalkForecast(forecast);
+            // Unlike forward-authority joins, a construction anchor need not be
+            // current authority. Preserve the forecast's pending/stale-tick state.
+            next.awaitingOrigin = forecast.awaitingOrigin;
+            next.confirmedClickIndex = forecast.confirmedClickIndex;
+            next.confirmedPreviewIndex = forecast.confirmedPreviewIndex;
+            if (crossing != null)
+            {
+                Leg connector = occupied.endingAt(crossing, first.running);
+                connector.headingX = first.end.getX() - x; connector.headingY = first.end.getY() - y;
+                connector.joinPrepared = true;
+                next.legs.addLast(connector);
+            }
+            next.legs.addLast(departure);
+            boolean skip = true;
+            for (Leg leg : forecast.legs)
+            {
+                if (skip) { skip = false; } else { next.legs.addLast(leg); }
+            }
+            if (walk)
+            {
+                next.reversalPreview = true;
+                next.inheritWalkContinuity(this);
+                next.pendingWalkConfirmation();
+            }
+            double travel = remainingTravel(next);
+            if (next.legs.size() <= MAX_QUEUE && next.clear() && travel < bestTravel - EPS)
+            {
+                best = next; bestTravel = travel;
+            }
+        }
+        return best;
+    }
+
+    private boolean withinGoalInterval(MovementPath candidate, LocalPoint goal)
+    {
+        for (Leg leg : candidate.legs)
+        {
+            if (!withinGoalInterval(leg.end.getX(), leg.end.getY(), goal)) { return false; }
+        }
+        return true;
+    }
+
+    private boolean withinGoalInterval(double px, double py, LocalPoint goal)
+    {
+        return px >= Math.min(x, goal.getX()) - EPS && px <= Math.max(x, goal.getX()) + EPS &&
+            py >= Math.min(y, goal.getY()) - EPS && py <= Math.max(y, goal.getY()) + EPS;
     }
 
     /** Fresh idle Walks and moving replacements share the same already-true-goal rule. */
     void pendingWalkConfirmation()
     {
+        walkForecast = true;
         if (!legs.isEmpty() && confirmed.equals(clickedDestination()) && !position().equals(confirmed))
         {
             speculative = reversalPreview = true;
@@ -672,7 +815,7 @@ final class MovementPath
         // A preceding step can be off this fresh itinerary even when its old
         // true tile was the construction origin. Checked forward progress must
         // join the latest goal instead of rejecting it and idling at that step.
-        MovementPath joined = alignForwardAuthority(endpoint, goal, run, now);
+        MovementPath joined = alignForwardAuthority(endpoint, goal, run, now, true);
         if (joined != null) { joined.inheritWalkContinuity(this); }
         return joined;
     }
@@ -684,11 +827,21 @@ final class MovementPath
         if (invalid || recovering || !speculative || !agreement || replacement ||
             !sameView(endpoint, confirmed) || endpoint.equals(confirmed) || clickedPath.contains(endpoint) ||
             hasUnfinishedConfirmedPrefix() || goal == null || now >= deadline || now >= chainDeadline) { return null; }
-        return alignForwardAuthority(endpoint, goal, run, now);
+        MovementPath joined = alignForwardAuthority(endpoint, goal, run, now, false);
+        if (joined != null)
+        {
+            // The forward join already adopts this new authority before the
+            // controller's accept(). Count that real progress exactly once.
+            List<LocalPoint> progress = checkedRoute(confirmed, endpoint, collision, 2);
+            joined.confirmedTripTiles = Math.min(MAX_ROUTE, confirmedTripTiles + (progress == null ? 0 : progress.size()));
+            joined.tripEnded = false;
+            joined.confirmedArrivalTrip = confirmedArrivalTrip;
+        }
+        return joined;
     }
 
     /** Shared construction after Walk/scene evidence gates; only checked forward authority grants a new horizon. */
-    private MovementPath alignForwardAuthority(LocalPoint endpoint, LocalPoint goal, boolean run, long now)
+    private MovementPath alignForwardAuthority(LocalPoint endpoint, LocalPoint goal, boolean run, long now, boolean walk)
     {
         List<LocalPoint> steps = checkedRoute(confirmed, endpoint, collision, 2);
         long dx = endpoint.getX() - confirmed.getX(), dy = endpoint.getY() - confirmed.getY();
@@ -702,11 +855,16 @@ final class MovementPath
             forecast.running = true;
             for (Leg leg : forecast.legs) { leg.running = true; }
         }
-        return joinForecast(forecast, dx, dy);
+        return joinForecast(forecast, dx, dy, walk);
     }
 
     /** Join an authority-anchored checked itinerary without returning to its construction origin. */
     private MovementPath joinForecast(MovementPath forecast, double dx, double dy)
+    {
+        return joinForecast(forecast, dx, dy, false);
+    }
+
+    private MovementPath joinForecast(MovementPath forecast, double dx, double dy, boolean walk)
     {
         LocalPoint endpoint = forecast.confirmed;
         if (distance(position(), endpoint) > (forecast.forecastSteps() + 1) * TILE) { return null; }
@@ -722,6 +880,15 @@ final class MovementPath
                 !collision.test(active.end, active.start)) { return null; }
 
         List<MovementPath> candidates = new ArrayList<>();
+        // The same fully checked square/shared-boundary join serves native
+        // refinements too. Their callers retain confirmed-prefix eligibility,
+        // reserves and deadlines; they do not acquire Walk ownership or curves.
+        MovementPath departure = joinDeparture(active, forecast, true, walk);
+        if (departure != null)
+        {
+            departure.reversalPreview = forecast.reversalPreview;
+            candidates.add(departure);
+        }
         // Already on the authority-anchored route: retain its checked chord or
         // edge from the exact fractional point, omitting obsolete construction legs.
         boolean joined = false;
@@ -757,12 +924,18 @@ final class MovementPath
                 if (next.legs.size() <= MAX_QUEUE && next.clear()) { candidates.add(next); }
             }
         }
-        MovementPath best = null, forward = null;
+        MovementPath best = null, forward = null, directed = null;
         double bestTravel = Double.POSITIVE_INFINITY, bestGeometry = Double.POSITIVE_INFINITY;
         double forwardTravel = Double.POSITIVE_INFINITY, forwardGeometry = Double.POSITIVE_INFINITY;
+        double directedTravel = Double.POSITIVE_INFINITY, directedGeometry = Double.POSITIVE_INFINITY;
         for (MovementPath candidate : candidates)
         {
             double travel = remainingTravel(candidate), geometry = remainingGeometry(candidate);
+            if (walk && withinGoalInterval(candidate, forecast.clickedDestination()) &&
+                (travel < directedTravel - EPS || Math.abs(travel - directedTravel) <= EPS && geometry < directedGeometry - EPS))
+            {
+                directed = candidate; directedTravel = travel; directedGeometry = geometry;
+            }
             if (travel < bestTravel - EPS || Math.abs(travel - bestTravel) <= EPS && geometry < bestGeometry - EPS)
             {
                 best = candidate; bestTravel = travel; bestGeometry = geometry;
@@ -776,6 +949,7 @@ final class MovementPath
         }
         // Prefer a legal forward join over a small time saving from retracing.
         // A blocked layout may still require the original checked recovery.
+        if (directed != null && directedTravel <= bestTravel + TILE) { return directed; }
         return forward != null && forwardTravel <= bestTravel + TILE ? forward : best;
     }
 
@@ -791,6 +965,8 @@ final class MovementPath
         next.deadline = forecast.deadline; next.chainDeadline = forecast.chainDeadline;
         next.npcMin = forecast.npcMin; next.npcMax = forecast.npcMax;
         next.npcReserveTiles = forecast.npcReserveTiles;
+        next.nativeCounterPairs = forecast.nativeCounterPairs;
+        next.nativeCounterReleaseIndex = forecast.nativeCounterReleaseIndex;
         next.npcArrivalGoal = forecast.npcArrivalGoal; next.counterNativeGoal = forecast.counterNativeGoal;
         next.counterBoundaryGoal = forecast.counterBoundaryGoal;
         next.combatTracking = forecast.combatTracking;
@@ -803,6 +979,7 @@ final class MovementPath
     {
         // This is a one-shot join, not a new movement owner or prediction credit.
         walkContinuity = true;
+        walkForecast = previous.walkForecast;
         tangentX = previous.tangentX; tangentY = previous.tangentY;
     }
 
@@ -952,8 +1129,131 @@ final class MovementPath
         }
         LocalPoint goal = forecast.clickedDestination();
         MovementPath joined = joinForecast(forecast, goal.getX() - confirmed.getX(), goal.getY() - confirmed.getY());
-        if (joined != null) { joined.npcRetarget = target.ordinaryOption(); }
+        if (joined != null) { joined.npcRetarget = target.ordinaryOption() || target.counterBank(); }
         return joined;
+    }
+
+    /** Click-time intent joins the same checked queue and clock, retaining real confirmed debt. */
+    MovementPath anticipateNativeIntent(LocalPoint goal, boolean run, long now, LocalPoint min, LocalPoint max, int reserve,
+        boolean counterPairs)
+    {
+        if (invalid || !sameView(goal,confirmed)) { return null; }
+        MovementPath forecast = anticipate(confirmed,confirmed,goal,run,now,multiplier,
+            restartDeadline(now,confirmed),collision,false,min,max,reserve);
+        if (forecast == null) { return null; }
+        forecast.nativeCounterPairs = counterPairs && run;
+        if (forecast.nativeCounterPairs) { forecast.extend(); }
+        // A short checked seed must not finish and publish idle before the first
+        // native endpoint. Reuse the existing single-clock exponential reserve.
+        forecast.easingNpcStart = !forecast.nativeCounterPairs && forecast.legs.size()==1 && forecast.preview.size()<=3;
+        if (hasUnfinishedConfirmedPrefix() || !speculative && !legs.isEmpty() && legs.peekLast().end.equals(confirmed))
+        {
+            replacement(true);
+            if (!queuePrediction(forecast)) { return null; }
+            recovering = false;
+            easingNpcStart = forecast.easingNpcStart;
+            confirmedTripTiles = 0; confirmedArrivalTrip = false;
+            return this;
+        }
+        if (finished() && tileCenter(position()))
+        {
+            forecast.lastNanos = lastNanos;
+            return forecast;
+        }
+        MovementPath joined = joinForecast(forecast,goal.getX()-x,goal.getY()-y);
+        if (joined != null) { joined.easingNpcStart = forecast.easingNpcStart; }
+        return joined;
+    }
+
+    /** Native destination evidence supersedes only the provisional stopping reserve. */
+    void nativeIntentDestination(boolean retainBoundary)
+    {
+        if (!retainBoundary) { npcMin = npcMax = null; }
+        easingNpcStart = false;
+        confirmedArrivalTrip = false;
+        nativeCounterPairs = false;
+    }
+
+    boolean matchesNativeCounterDestination(LocalPoint destination, long now)
+    {
+        return nativeCounterPairs && !invalid && !recovering && agreement && !replacement &&
+            now < deadline && now < chainDeadline && destination != null && destination.equals(clickedDestination());
+    }
+
+    void retireNativeCounterPairs()
+    {
+        if (nativeCounterPairs) { nativeCounterPairs=false; cancel(); }
+    }
+
+    LocalPoint nativeCounterArrivalGoal()
+    {
+        if (!nativeCounterPairs || invalid || recovering || replacement || !agreement) { return null; }
+        int index = nativeCounterBoundaryIndex();
+        return index < 0 ? null : clickedPath.get(index);
+    }
+
+    boolean releaseNativeCounterContinuation(LocalPoint destination, LocalPoint previousAuthority, long now)
+    {
+        if (!nativeCounterPairs || invalid || recovering || replacement || !agreement || !running ||
+            confirmed.equals(previousAuthority) || destination == null || !destination.equals(clickedDestination()) ||
+            now >= deadline || now >= chainDeadline || confirmedClickIndex < nativeCounterBoundaryIndex() || forecastSteps()<2) { return false; }
+        int onward=Math.min(clickedPath.size()-1,confirmedClickIndex+2);
+        if (onward<=confirmedClickIndex) { return false; }
+        for(int i=confirmedClickIndex+1;i<=onward;++i)
+        {
+            if (!collision.test(clickedPath.get(i-1),clickedPath.get(i)) || !collision.test(clickedPath.get(i),clickedPath.get(i-1))) { return false; }
+        }
+        nativeCounterReleaseIndex=onward;
+        long response=deadline; extend(); deadline=response;
+        return true;
+    }
+
+    private int nativeCounterBoundaryIndex()
+    {
+        for (int i=0;i<clickedPath.size();++i)
+        {
+            if (insideNpcStaging(clickedPath.get(i)))
+            {
+                // The native client executes a whole run pair before checking
+                // counter reach. Do not split a checked pair at its first tile.
+                int boundary=running && i%2==1 && i+1<clickedPath.size() ? i+1 : i;
+                return Math.max(boundary,nativeCounterReleaseIndex);
+            }
+        }
+        return -1;
+    }
+
+    /** Native intent's actor/flag distance never proves a qualifying actual trip. */
+    void useConfirmedArrivalTrip()
+    {
+        confirmedArrivalTrip = true;
+    }
+
+    /** New actor input cannot inherit the previous movement's arrival threshold. */
+    void beginNativeIntentTrip()
+    {
+        confirmedTripTiles = 0;
+        tripEnded = false;
+    }
+
+    /** A changed native flag can repair a failed start within its existing horizon. */
+    MovementPath refineConfirmedApproach(LocalPoint destination, boolean run, long now, boolean approach)
+    {
+        if (invalid || recovering || speculative || now >= chainDeadline ||
+            !sameView(destination, confirmed) || destination.equals(confirmed)) { return null; }
+        MovementPath forecast = anticipate(confirmed, confirmed, destination, run, now, multiplier,
+            chainDeadline, collision, approach);
+        if (forecast == null) { return null; }
+        forecast.confirmedTripTiles = confirmedTripTiles;
+        forecast.tripEnded = tripEnded;
+        forecast.confirmedArrivalTrip = confirmedArrivalTrip;
+        if (canAnticipateContinuation()) { return queuePrediction(forecast) ? this : null; }
+        if (finished())
+        {
+            forecast.lastNanos = lastNanos;
+            return forecast;
+        }
+        return null;
     }
 
     /** Native destination evidence replaces an obsolete scene-interaction preview. */
@@ -976,7 +1276,8 @@ final class MovementPath
     /** New forward NPC authority may identify a different side/row than the provisional prefix. */
     MovementPath alignNpcAuthority(LocalPoint endpoint, NpcApproach target, LocalPoint destination, boolean run, long now)
     {
-        if ((!target.ordinaryOption() && !target.movingCombat()) || invalid || recovering || !speculative || !agreement || replacement ||
+        boolean counter = target.counterBank() && pendingCounterRetarget(now);
+        if ((!target.ordinaryOption() && !target.movingCombat() && !counter) || invalid || recovering || !speculative || !agreement || replacement ||
             !sameView(endpoint, confirmed) || endpoint.equals(confirmed) || clickedPath.contains(endpoint) ||
             hasUnfinishedConfirmedPrefix() || now >= deadline || now >= chainDeadline) { return null; }
         List<LocalPoint> steps = checkedRoute(confirmed, endpoint, collision, 2);
@@ -988,7 +1289,15 @@ final class MovementPath
         LocalPoint goal = target.rangedCombat() ? ranged == null || ranged.isEmpty() ? null : ranged.get(ranged.size() - 1) :
             target.acceptsDestination(destination) ? destination : target.goal(endpoint, collision);
         MovementPath forecast;
-        if (goal == null && (target.movingCombat() ? target.combatBoundary(endpoint) : target.acceptsDestination(endpoint)))
+        if (counter)
+        {
+            if (!run) { return null; }
+            NpcApproach.CounterRun plan = target.counterRun(endpoint, collision);
+            forecast = anticipateCounterRun(endpoint, endpoint, plan, now, multiplier, freshDeadline(now),
+                collision, target.min, target.max);
+            if (forecast != null) { forecast.releaseCounterBoundary(destination, now); }
+        }
+        else if (goal == null && (target.movingCombat() ? target.combatBoundary(endpoint) : target.acceptsDestination(endpoint)))
         {
             forecast = idle(endpoint, now, multiplier, collision);
             forecast.clickedPath.add(endpoint); forecast.preview.add(endpoint);
@@ -1007,6 +1316,7 @@ final class MovementPath
             for (Leg leg : forecast.legs) { leg.running = true; }
         }
         MovementPath joined = joinForecast(forecast, dx, dy);
+        if (joined != null && counter) { joined.npcRetarget = true; }
         if (joined != null && target.movingCombat())
         {
             joined.combatTracking = joined.combatCredit = true;
@@ -1099,8 +1409,13 @@ final class MovementPath
                     replacement(true);
                     return queuePrediction(forecast) ? this : null;
                 }
-                MovementPath joined = joinForecast(forecast, destination.getX() - confirmed.getX(), destination.getY() - confirmed.getY());
-                if (joined != null) { return joined; }
+                MovementPath joined = joinForecast(forecast, destination.getX() - x, destination.getY() - y);
+                if (joined != null)
+                {
+                    joined.confirmedTripTiles = confirmedTripTiles; joined.tripEnded = tripEnded;
+                    joined.confirmedArrivalTrip = confirmedArrivalTrip;
+                    return joined;
+                }
             }
         }
         MovementPath fallback = retargetNativeApproach(destination, run, now);
@@ -1110,6 +1425,9 @@ final class MovementPath
             // replacement input. It cannot renew either prediction horizon.
             fallback.deadline = Math.min(fallback.deadline, deadline);
             fallback.chainDeadline = Math.min(fallback.chainDeadline, chainDeadline);
+            fallback.confirmedTripTiles = confirmedTripTiles;
+            fallback.tripEnded = tripEnded;
+            fallback.confirmedArrivalTrip = confirmedArrivalTrip;
         }
         return fallback;
     }
@@ -1149,8 +1467,12 @@ final class MovementPath
         for (Leg leg : legs)
         {
             if (leg.end.equals(confirmed) || inside(leg, confirmed.getX(), confirmed.getY()) &&
-                !leg.start.equals(confirmed)) { return true; }
+                !leg.start.equals(confirmed) && (leg != legs.peekFirst() ||
+                    (leg.end.getX() - leg.start.getX()) * (confirmed.getX() - x) +
+                    (leg.end.getY() - leg.start.getY()) * (confirmed.getY() - y) > EPS)) { return true; }
         }
+        // Authority inside an occupied knight can already be behind the display.
+        // Its containing rectangle does not confirm the old speculative suffix.
         return false;
     }
 
@@ -1247,8 +1569,10 @@ final class MovementPath
     boolean anticipateCounterContinuation(NpcApproach.CounterRun plan, long now, LocalPoint npcMin, LocalPoint npcMax)
     {
         if (!canAnticipateContinuation()) { return false; }
-        return queuePrediction(anticipateCounterRun(confirmed, confirmed, plan, now, multiplier,
+        boolean queued = queuePrediction(anticipateCounterRun(confirmed, confirmed, plan, now, multiplier,
             restartDeadline(now, confirmed), collision, npcMin, npcMax));
+        if (queued) { npcRetarget = true; }
+        return queued;
     }
 
     private boolean queuePrediction(MovementPath next)
@@ -1266,6 +1590,8 @@ final class MovementPath
         chainDeadline = next.chainDeadline;
         this.npcMin = next.npcMin; this.npcMax = next.npcMax;
         this.npcReserveTiles = next.npcReserveTiles;
+        nativeCounterPairs = next.nativeCounterPairs;
+        nativeCounterReleaseIndex = next.nativeCounterReleaseIndex;
         npcArrivalGoal = next.npcArrivalGoal; counterNativeGoal = next.counterNativeGoal;
         counterBoundaryGoal = next.counterBoundaryGoal;
         combatTracking = next.combatTracking; combatCredit = next.combatCredit;
@@ -1369,6 +1695,13 @@ final class MovementPath
         {
             return false;
         }
+        if (nativeCounterPairs && steps.size()!=2)
+        {
+            // Unsupported single-step authority ends the provisional pair
+            // assumption. Preserve/reconcile real movement under normal checks.
+            nativeCounterPairs = false;
+            cancel();
+        }
         if (tripEnded) { confirmedTripTiles = 0; }
         confirmedTripTiles = Math.min(MAX_ROUTE, confirmedTripTiles + steps.size());
         tripEnded = false;
@@ -1423,7 +1756,9 @@ final class MovementPath
         // A published two-tile step is running even when Ctrl temporarily
         // overrides a disabled run orb. A short continuation retains the
         // established gait only while the requested run mode remains active.
-        running = steps.size() > 1 || (run && running);
+        consecutiveSingleSteps = steps.size() == 1 ? consecutiveSingleSteps + 1 : 0;
+        running = steps.size() > 1 || (run && running &&
+            (consecutiveSingleSteps < 2 || speculative && agreement && !replacement));
         if (agreement && !replacement && !recovering)
         {
             for (LocalPoint step : steps)
@@ -1523,8 +1858,20 @@ final class MovementPath
             // endpoint is off that line. Compare the whole latest itinerary: a
             // delayed preceding endpoint must not confirm its construction origin
             // or append a return trip behind the newly clicked reversal.
-            opposite =
-                (long) dx * (endpoint.getX() - confirmed.getX()) + (long) dy * (endpoint.getY() - confirmed.getY()) < 0;
+            long progress = (long) dx * (endpoint.getX() - confirmed.getX()) +
+                (long) dy * (endpoint.getY() - confirmed.getY());
+            // An explicitly owned fresh Walk can also receive a perpendicular
+            // endpoint from its preceding click. It confirms no latest-route
+            // progress and must not add a return trip or renew either deadline.
+            // A delayed step can be positive on the construction route's minor
+            // axis while going away from the displayed latest-goal direction.
+            // Keep only an owned bounded forecast when BOTH the authority gap
+            // increases and that displayed direction is opposed. Logical route
+            // matching above still wins for genuine obstacle detours.
+            double visibleProgress = (goal.getX() - x) * (endpoint.getX() - confirmed.getX()) +
+                (goal.getY() - y) * (endpoint.getY() - confirmed.getY());
+            opposite = progress < 0 || walkForecast && (progress == 0 || visibleProgress < 0 &&
+                distance(endpoint, goal) > distance(confirmed, goal));
         }
         if (!opposite) { return false; }
 
@@ -1537,8 +1884,14 @@ final class MovementPath
 
     private boolean retainNpcRetarget(LocalPoint endpoint)
     {
+        if (!canRetainNpcRetarget(endpoint, lastNanos)) { return false; }
+        return retainForecastAuthority(endpoint);
+    }
+
+    private boolean canRetainNpcRetarget(LocalPoint endpoint, long now)
+    {
         if (!npcRetarget || !speculative || !agreement || replacement || recovering ||
-            lastNanos >= deadline || lastNanos >= chainDeadline || clickedPath.contains(endpoint)) { return false; }
+            now >= deadline || now >= chainDeadline || clickedPath.contains(endpoint)) { return false; }
         LocalPoint goal = clickedDestination();
         long dx = endpoint.getX() - confirmed.getX(), dy = endpoint.getY() - confirmed.getY();
         if (dx * (goal.getX() - confirmed.getX()) + dy * (goal.getY() - confirmed.getY()) > 0) { return false; }
@@ -1546,7 +1899,7 @@ final class MovementPath
         // not undo this newer click before its existing response deadline. Keep
         // the checked forecast clipped to the updated authority gap, with no
         // deadline renewal. New forward evidence can re-anchor it above.
-        return retainForecastAuthority(endpoint);
+        return true;
     }
 
     /** Shared clipping only; Walk/NPC evidence gates and deadlines stay with their callers. */
@@ -1629,6 +1982,11 @@ final class MovementPath
     /** NPC footprint is direction evidence, not proof of the final interaction tile. */
     private int limitForecast(int limit)
     {
+        if (nativeCounterPairs)
+        {
+            int boundary = nativeCounterBoundaryIndex();
+            if (boundary >= 0) { return Math.min(limit,Math.max(boundary,confirmedClickIndex)); }
+        }
         if (counterBoundaryGoal != null)
         {
             // A confirmed corner is still not evidence for the next pair. Later
@@ -1715,7 +2073,7 @@ final class MovementPath
     {
         npcRetarget = false;
         easingNpcStart = false;
-        if (walk) { npcArrivalGoal = counterNativeGoal = counterBoundaryGoal = null; }
+        if (walk) { npcArrivalGoal = counterNativeGoal = counterBoundaryGoal = null; nativeCounterPairs = false; }
         replacement = true;
         agreement = false;
         if (!walk) { return; }
@@ -1889,19 +2247,47 @@ final class MovementPath
     void advance(long now, boolean continuingRun, int catchUpPercent, int slowAheadPercent,
         LocalPoint arrivalGoal, ArrivalPacing arrival)
     {
+        advance(now, continuingRun, catchUpPercent, slowAheadPercent, arrivalGoal, arrival, false);
+    }
+
+    void advance(long now, boolean continuingRun, int catchUpPercent, int slowAheadPercent,
+        LocalPoint arrivalGoal, ArrivalPacing arrival, boolean approachContinuity)
+    {
         turnFraction = 0;
         arrivalWalking = false;
         arrivalPaced = false;
+        publicationWalking = false;
         double boost = Math.max(0, Math.min(50, catchUpPercent)) / 100.0;
         double slowdown = Math.max(0, Math.min(50, slowAheadPercent)) / 100.0;
-        double tripLength = (!clickedPath.isEmpty() && agreement ? clickedPath.size() - 1 : confirmedTripTiles) * (double) TILE;
+        LocalPoint counterGoal = nativeCounterArrivalGoal();
+        int counterIndex = counterGoal == null ? -1 : clickedPath.indexOf(counterGoal);
+        int tripTiles = counterIndex < 0 ? !confirmedArrivalTrip && !clickedPath.isEmpty() && agreement ?
+            clickedPath.size()-1 : confirmedTripTiles : confirmedTripTiles+Math.max(0,counterIndex-confirmedClickIndex);
+        double tripLength = tripTiles * (double) TILE;
         arrival = tripLength >= 3 * TILE ? arrival.fit(tripLength) : ArrivalPacing.OFF;
         double millis = Math.min(100, Math.max(0, now - lastNanos) / 1_000_000.0);
+        long frameStart = lastNanos;
         lastNanos = now;
         if (speculative && now >= deadline) { cancel(); }
         // Confirmed debt cannot linger indefinitely if a renderer/target drops
         // the hitsplat event. Release its pacing at the existing response bound.
         if (combatTrailing && !speculative && now >= deadline) { combatTrailing = false; }
+        // Confirmed-only travel has no onward geometry to spend early. Spread
+        // its remaining debt over the publication interval instead of racing
+        // to the endpoint and applying an almost-stationary exponential tail.
+        // The deadline is renewed only by authority, never by an unchanged flag.
+        double confirmedRate = Double.POSITIVE_INFINITY;
+        if (continuingRun && !speculative && !recovering && !combatTracking && !legs.isEmpty() &&
+            legs.peekLast().end.equals(confirmed) && now < deadline)
+        {
+            double remainingMillis = (deadline - RESPONSE_NANOS + 620_000_000L - frameStart) / 1_000_000.0;
+            double linear = Math.min(millis, Math.max(0, remainingMillis - 20));
+            double retained = remainingMillis > 20 ? (remainingMillis - linear) / remainingMillis : 1;
+            retained *= Math.exp(-(millis - linear) / 20);
+            if (millis > 0) { confirmedRate = confirmedTravel() * (1 - retained) / millis; }
+            publicationWalking = confirmedRate <= rate(false) + EPS;
+            arrival = ArrivalPacing.OFF;
+        }
         while (!legs.isEmpty())
         {
             Leg leg = legs.peekFirst();
@@ -1913,13 +2299,14 @@ final class MovementPath
                 x = leg.end.getX(); y = leg.end.getY(); legs.removeFirst(); continue;
             }
             double travelRate = combatTrailing && !recovering ? rate(false) * 0.65 : rate(leg.running);
+            if (Double.isFinite(confirmedRate)) { travelRate = Math.min(travelRate * (1 + boost), confirmedRate); }
             if (walkContinuity && !recovering && !combatTracking && npcMin == null && !leg.joinPrepared)
             {
                 leg.joinPrepared = true;
                 leg.curve = checkedJoin(leg);
                 walkContinuity = false;
             }
-            double debt = boost > 0 ? catchUpDebt() : 0;
+            double debt = boost > 0 && !Double.isFinite(confirmedRate) ? catchUpDebt() : 0;
             double lead = slowdown > 0 && debt <= 0 ? forecastLead() : Double.NaN;
             double arrivalRemaining = arrival.enabled() ? arrivalRemaining(arrivalGoal) : Double.NaN;
             if (leg.curve != null)
@@ -1962,12 +2349,18 @@ final class MovementPath
                 turnY = leg.headingY;
                 tangentX = dx; tangentY = dy;
             }
-            if (easingNpcStart && speculative && agreement && !replacement && !recovering)
+            if (easingNpcStart && speculative && agreement && !replacement && !recovering && confirmedTravel()<=EPS)
             {
                 // Exponential approach stays within the same checked leg and
                 // rate cap, independent of frame cadence. It leaves a small
                 // positional reserve until confirmation or the existing timeout.
-                double fraction = exponentialFraction(rate(leg.running), millis, TILE);
+                // A one-leg seed may be a merged two-tile knight, not one
+                // tile. A fixed one-tile denominator doubles its initial rate.
+                // Keep the reserve constant over this leg for exact integration.
+                double reserve = Math.max(TILE, distance(leg.start, leg.end));
+                if (leg.corridorEnd != null) { reserve = Math.max(reserve, distance(leg.start, leg.corridorEnd)); }
+                double fraction = exponentialFraction(rate(leg.running), millis, reserve);
+                publicationWalking = distance*(1-fraction)*rate(leg.running)/reserve <= rate(false)+EPS;
                 turnFraction = fraction;
                 x += dx * fraction;
                 y += dy * fraction;
@@ -1983,24 +2376,23 @@ final class MovementPath
                 x += dx * fraction; y += dy * fraction;
                 break;
             }
-            if (continuingRun && !speculative && !recovering && !combatTracking && leg.running &&
-                legs.size() == 1 && leg.end.equals(confirmed) && now < deadline)
+            if (approachContinuity && continuingRun && speculative && agreement && !replacement && !recovering && !combatTracking &&
+                legs.size() == 1 && (npcReserveTiles <= 2 && npcMin != null && npcArrivalGoal == null && counterNativeGoal == null &&
+                    !leg.end.equals(clickedDestination()) || sameView(arrivalGoal, clickedDestination()) &&
+                    !arrivalGoal.equals(clickedDestination())))
             {
-                // Reuse the final-leg exponential reserve inside confirmed
-                // geometry. Normal travel reaches the last 100 ms of this leg;
-                // its small tail stays continuous until the next server step.
-                // No extra tile, itinerary, clock or prediction is introduced.
-                double reserve = travelRate * 100;
-                // Catch up on the confirmed linear portion, retaining the native
-                // run's existing small final reserve at its ordinary rate.
-                double normalDistance = Math.max(0, distance - reserve);
-                double normal = Math.min(millis, catchUpMillis(normalDistance, travelRate, debt, boost));
-                double spend = Math.min(normalDistance, catchUpTravel(normal, travelRate, debt, boost));
-                double remaining = distance - spend;
-                double tail = millis - normal;
-                double fraction = (spend + remaining * exponentialFraction(travelRate, tail, reserve)) / distance;
-                turnFraction = fraction;
-                x += dx * fraction; y += dy * fraction;
+                // A native-owned approach can reach its conservative preview
+                // boundary before the next authority update. Keep a small part
+                // of THIS checked leg instead of publishing idle there. Integrate
+                // linear travel then a bounded 300-ms exponential tail exactly; never
+                // extend the route, staging ring, response or chain deadline.
+                double reserve = Math.min(TILE, travelRate * 300);
+                double linear = Math.min(millis, Math.max(0, (distance - reserve) / travelRate));
+                double remaining = (distance - travelRate * linear) *
+                    Math.exp(-travelRate * (millis - linear) / reserve);
+                double fraction = 1 - remaining / distance;
+                publicationWalking = travelRate*Math.min(1,remaining/reserve) <= rate(false)+EPS;
+                x += dx * fraction; y += dy * fraction; turnFraction = fraction;
                 break;
             }
             if (millis + EPS < duration)
@@ -2033,6 +2425,11 @@ final class MovementPath
     {
         if (invalid || recovering || awaitingOrigin || reversalPreview || combatTrailing ||
             Math.max(Math.abs(x - confirmed.getX()), Math.abs(y - confirmed.getY())) < EPS) { return 0; }
+        return confirmedTravel();
+    }
+
+    private double confirmedTravel()
+    {
         double debt = 0, px = x, py = y;
         for (Leg leg : legs)
         {
@@ -2103,7 +2500,9 @@ final class MovementPath
         // The native flag clears on arrival. Keep a pending click's actual goal,
         // or settle the remaining confirmed route onto the final true tile.
         if (goal == null) { goal = speculative ? clickedDestination() : confirmed; }
-        if (goal == null || invalid || recovering || replacement || awaitingOrigin || combatTracking ||
+        boolean finalAuthority = !speculative && confirmed.equals(goal);
+        if (goal == null || invalid || recovering || replacement && !finalAuthority || awaitingOrigin ||
+            combatTracking && (!finalAuthority || combatTrailing) ||
             easingNpcStart || legs.isEmpty() || !legs.peekLast().end.equals(goal)) { return Double.NaN; }
         double remaining = 0, px = x, py = y;
         for (Leg leg : legs)
@@ -2195,6 +2594,19 @@ final class MovementPath
         {
             double cx = x + tangentX / incoming * reach, cy = y + tangentY / incoming * reach;
             double tx = endX - dx / distance * reach, ty = endY - dy / distance * reach;
+            // Keep the useful component of an incoming tangent while dropping
+            // its old-click excursion on the other axis. Projection retains a
+            // local smooth turn; both projected controls must still pass the
+            // original convex corridor and forecast-gap proofs below.
+            if (goal != null && withinGoalInterval(leg.end.getX(), leg.end.getY(), goal))
+            {
+                cx = Math.max(Math.min(x, goal.getX()), Math.min(Math.max(x, goal.getX()), cx));
+                cy = Math.max(Math.min(y, goal.getY()), Math.min(Math.max(y, goal.getY()), cy));
+                tx = Math.max(Math.min(x, goal.getX()), Math.min(Math.max(x, goal.getX()), tx));
+                ty = Math.max(Math.min(y, goal.getY()), Math.min(Math.max(y, goal.getY()), ty));
+                if (Math.max(Math.abs(cx - x), Math.abs(cy - y)) < EPS ||
+                    Math.max(Math.abs(endX - tx), Math.abs(endY - ty)) < EPS) { continue; }
+            }
             if (insideCheckedCorridor(leg, cx, cy) && insideCheckedCorridor(leg, tx, ty) &&
                 withinForecastGap(cx, cy) && withinForecastGap(tx, ty) && withinForecastGap(endX, endY))
             {
@@ -2395,7 +2807,10 @@ final class MovementPath
     LocalPoint clickedDestination() { return clickedPath.isEmpty() ? null : clickedPath.get(clickedPath.size() - 1); }
     boolean moving() { return !legs.isEmpty(); }
     boolean running() { return moving() && !(combatTrailing && !recovering) && legs.peekFirst().running; }
-    boolean presentationRunning() { return arrivalPaced ? moving() && running && !arrivalWalking : running(); }
+    boolean presentationRunning()
+    {
+        return !publicationWalking && (arrivalPaced ? moving() && running && !arrivalWalking : running());
+    }
     boolean finished() { return !speculative && legs.isEmpty() && position().equals(confirmed); }
     double turnFraction() { return turnFraction; }
     double turnX() { return turnX; }
@@ -2411,8 +2826,8 @@ final class MovementPath
         private final List<LocalPoint> route, preview;
         private final int[] queue;
         private final double[] joins;
-        private final LocalPoint origin, confirmed, npcMin, npcMax, npcArrivalGoal, counterNativeGoal, counterBoundaryGoal;
-        private final int flags, confirmedClickIndex, confirmedPreviewIndex, reserve;
+        private final LocalPoint origin, confirmed, npcMin, npcMax, npcArrivalGoal, counterNativeGoal, counterBoundaryGoal, nativeCounterGoal;
+        private final int flags, confirmedClickIndex, confirmedPreviewIndex, reserve, confirmedTripTiles;
         private final long deadline, chainDeadline;
         private final double speed;
 
@@ -2444,12 +2859,14 @@ final class MovementPath
             npcMin = path.npcMin; npcMax = path.npcMax; npcArrivalGoal = path.npcArrivalGoal();
             counterNativeGoal = path.counterNativeGoal;
             counterBoundaryGoal = path.counterBoundaryGoal;
+            nativeCounterGoal = path.nativeCounterArrivalGoal();
             flags = (path.speculative ? 1 : 0) | (path.recovering ? 2 : 0) | (path.replacement ? 4 : 0) |
                 (path.agreement ? 8 : 0) | (path.awaitingOrigin ? 16 : 0) | (path.reversalPreview ? 32 : 0) |
                 (path.invalid ? 64 : 0) | (path.easingNpcStart ? 128 : 0) | (path.running ? 256 : 0) | (path.npcRetarget ? 512 : 0) |
                 (path.combatTracking ? 1024 : 0) | (path.combatCredit ? 2048 : 0) | (path.combatTrailing ? 4096 : 0) |
-                (path.walkContinuity ? 8192 : 0);
+                (path.walkContinuity ? 8192 : 0) | (path.confirmedArrivalTrip ? 16384 : 0) | (path.nativeCounterPairs ? 32768 : 0);
             confirmedClickIndex = path.confirmedClickIndex; confirmedPreviewIndex = path.confirmedPreviewIndex;
+            confirmedTripTiles = path.confirmedTripTiles;
             reserve = path.npcReserveTiles; deadline = path.deadline; chainDeadline = path.chainDeadline; speed = path.multiplier;
         }
 
@@ -2461,17 +2878,21 @@ final class MovementPath
                 java.util.Objects.equals(npcMax, other.npcMax) && java.util.Objects.equals(npcArrivalGoal, other.npcArrivalGoal) &&
                 java.util.Objects.equals(counterNativeGoal, other.counterNativeGoal) &&
                 java.util.Objects.equals(counterBoundaryGoal, other.counterBoundaryGoal) &&
+                java.util.Objects.equals(nativeCounterGoal, other.nativeCounterGoal) &&
                 flags == other.flags && confirmedClickIndex == other.confirmedClickIndex && confirmedPreviewIndex == other.confirmedPreviewIndex &&
-                reserve == other.reserve && deadline == other.deadline && chainDeadline == other.chainDeadline && speed == other.speed;
+                reserve == other.reserve && confirmedTripTiles == other.confirmedTripTiles &&
+                deadline == other.deadline && chainDeadline == other.chainDeadline && speed == other.speed;
         }
 
         String fields(long started)
         {
             return " view=" + origin.getWorldView() + " origin=" + point(origin) + " confirmed=" + point(confirmed) +
                 " stateFlags=" + flags + " confirmedClickIndex=" + confirmedClickIndex + " confirmedPreviewIndex=" + confirmedPreviewIndex +
+                " confirmedTripTiles=" + confirmedTripTiles +
                 " npcReserveTiles=" + reserve + " npcMin=" + point(npcMin) + " npcMax=" + point(npcMax) +
                 " npcArrivalGoal=" + point(npcArrivalGoal) + " counterNativeGoal=" + point(counterNativeGoal) +
                 " counterBoundaryGoal=" + point(counterBoundaryGoal) +
+                " nativeCounterGoal=" + point(nativeCounterGoal) +
                 " deadlineUs=" + (deadline - started) / 1000 +
                 " chainDeadlineUs=" + (chainDeadline - started) / 1000 + " effectiveSpeed=" + speed +
                 " logical=" + points(route) + " preview=" + points(preview) + " legs=" + Arrays.toString(queue).replace(" ", "") +

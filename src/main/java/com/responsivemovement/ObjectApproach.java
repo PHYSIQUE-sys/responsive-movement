@@ -3,6 +3,7 @@ package com.responsivemovement;
 import java.util.List;
 import java.util.function.BiPredicate;
 import net.runelite.api.CollisionData;
+import net.runelite.api.Client;
 import net.runelite.api.CollisionDataFlag;
 import net.runelite.api.GameObject;
 import net.runelite.api.MenuAction;
@@ -19,11 +20,20 @@ final class ObjectApproach
 {
     final LocalPoint min;
     final LocalPoint max;
+    private final boolean wall;
+    private final boolean bank;
 
     private ObjectApproach(LocalPoint min, LocalPoint max)
     {
+        this(min, max, false, false);
+    }
+
+    private ObjectApproach(LocalPoint min, LocalPoint max, boolean wall, boolean bank)
+    {
         this.min = min;
         this.max = max;
+        this.wall = wall;
+        this.bank = bank;
     }
 
     static ObjectApproach bounds(LocalPoint min, LocalPoint max)
@@ -35,7 +45,17 @@ final class ObjectApproach
 
     static ObjectApproach capture(WorldView view, MenuOptionClicked event)
     {
+        return capture(null,view,event);
+    }
+
+    static ObjectApproach capture(Client client, WorldView view, MenuOptionClicked event)
+    {
         MenuAction action = event.getMenuAction();
+        String option = event.getMenuOption();
+        option = option == null ? "" : Text.removeTags(option).trim();
+        boolean bank = "Bank".equalsIgnoreCase(option) &&
+            action != MenuAction.ITEM_USE_ON_GAME_OBJECT && action != MenuAction.WIDGET_TARGET_ON_GAME_OBJECT;
+        boolean targeted = action == MenuAction.ITEM_USE_ON_GAME_OBJECT || action == MenuAction.WIDGET_TARGET_ON_GAME_OBJECT;
         // Item/widget use targets the same scene object as its menu options.
         // In particular, seeds and compost arrive as WIDGET_TARGET_ON_GAME_OBJECT.
         // Keep the footprint for every object-targeting action; otherwise a use
@@ -70,14 +90,31 @@ final class ObjectApproach
             if (maps == null || plane >= maps.length || maps[plane] == null) { return null; }
             int[][] flags = maps[plane].getFlags();
             if (flags == null || min.getX() >= flags.length || flags[min.getX()] == null ||
-                min.getY() >= flags[min.getX()].length ||
-                (flags[min.getX()][min.getY()] & CollisionDataFlag.BLOCK_MOVEMENT_OBJECT) == 0) { return null; }
+                min.getY() >= flags[min.getX()].length) { return null; }
+            boolean solid = (flags[min.getX()][min.getY()] & CollisionDataFlag.BLOCK_MOVEMENT_OBJECT) != 0;
+            boolean service = bank;
+            if (!solid && !service && targeted && client != null)
+            {
+                net.runelite.api.ObjectComposition definition = client.getObjectDefinition(event.getId());
+                String[] actions = definition == null ? null : definition.getActions();
+                if (actions != null)
+                {
+                    for (String candidate:actions) { if (candidate != null && "Bank".equalsIgnoreCase(candidate.trim())) { service=true; break; } }
+                }
+            }
+            if (!solid && !service) { return null; }
+            // Bank booths can be walkable single-tile geometry: their native
+            // anchor flag is not the interaction stop. Capture only the matched
+            // Bank object, without changing walkable-platform or Use policies.
+            if (service || targeted && min.equals(max))
+            {
+                return new ObjectApproach(new LocalPoint(min.getX() * 128 + 64, min.getY() * 128 + 64, view.getId()),
+                    new LocalPoint(max.getX() * 128 + 64, max.getY() * 128 + 64, view.getId()), false, service);
+            }
             return bounds(new LocalPoint(min.getX() * 128 + 64, min.getY() * 128 + 64, view.getId()),
                 new LocalPoint(max.getX() * 128 + 64, max.getY() * 128 + 64, view.getId()));
         }
         if (action == MenuAction.ITEM_USE_ON_GAME_OBJECT || action == MenuAction.WIDGET_TARGET_ON_GAME_OBJECT) { return null; }
-        String option = event.getMenuOption();
-        option = option == null ? "" : Text.removeTags(option).trim();
         if ("Open".equalsIgnoreCase(option) || "Close".equalsIgnoreCase(option))
         {
             WallObject wall = tile.getWallObject();
@@ -88,7 +125,7 @@ final class ObjectApproach
                 // the actual interaction stops beside it. Use the same perimeter
                 // staging as solid objects; only native authority crosses the wall.
                 LocalPoint at = new LocalPoint(x * 128 + 64, y * 128 + 64, view.getId());
-                return new ObjectApproach(at, at);
+                return new ObjectApproach(at, at, true, false);
             }
         }
         return null;
@@ -105,12 +142,35 @@ final class ObjectApproach
         return wallBoundary() && contains(published) && from != null && from.equals(goal(from, published));
     }
 
-    boolean wallBoundary() { return min.equals(max); }
+    boolean wallBoundary() { return wall; }
 
     LocalPoint goal(LocalPoint from, LocalPoint published, BiPredicate<LocalPoint, LocalPoint> collision)
     {
-        if (!contains(published) || wallBoundary()) { return goal(from, published); }
+        if (!contains(published)) { return published; }
         if (!MovementPath.sameView(from, min) || !MovementPath.tileCenter(from) || contains(from)) { return null; }
+        if (bank)
+        {
+            // Stay on an already occupied perimeter row/column when selecting
+            // another booth. A diagonal shortcut to its side can run underneath
+            // the neighbouring booth in a walkable counter row. This is checked
+            // staging, not an inferred interaction side or permission to enter it.
+            LocalPoint side = null;
+            if (from.getY() == min.getY() - 128 || from.getY() == max.getY() + 128)
+            {
+                side = new LocalPoint(Math.max(min.getX(), Math.min(max.getX(), from.getX())), from.getY(), min.getWorldView());
+            }
+            else if (from.getX() == min.getX() - 128 || from.getX() == max.getX() + 128)
+            {
+                side = new LocalPoint(from.getX(), Math.max(min.getY(), Math.min(max.getY(), from.getY())), min.getWorldView());
+            }
+            if (side != null && MovementPath.checkedRoute(from, side,
+                (a, b) -> collision.test(a, b) && collision.test(b, a) && !contains(a) && !contains(b), 64) != null)
+            {
+                return side;
+            }
+        }
+        // Walls need the same reachable-perimeter search as solid footprints:
+        // a geometrically near side can be sealed behind the wall itself.
         // Coordinate distance can prefer a side whose checked route bends past
         // an equally near, earlier perimeter. Use the shared cardinal-first
         // search to choose a reachable boundary, without guessing interaction reach.
