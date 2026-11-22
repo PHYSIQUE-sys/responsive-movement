@@ -23,6 +23,34 @@ final class MovementRoute
 
     private MovementRoute() { }
 
+    /** A Walk flag can name an occupied tile; forecast only its checked near side. */
+    static LocalPoint walkGoal(LocalPoint from, LocalPoint flag,
+        BiPredicate<LocalPoint, LocalPoint> collision)
+    {
+        if (!MovementPath.sameView(from, flag) || !MovementPath.tileCenter(from) ||
+            !MovementPath.tileCenter(flag) || from.equals(flag)) { return flag; }
+        int tile = Perspective.LOCAL_TILE_SIZE;
+        for (int[] direction : DIRECTIONS)
+        {
+            LocalPoint neighbour = new LocalPoint(flag.getX() + direction[0] * tile,
+                flag.getY() + direction[1] * tile, flag.getWorldView());
+            // Any usable entrance keeps ordinary exact-goal/detour behavior.
+            // A closed edge alone must not shorten a legitimate reachable Walk.
+            if (collision.test(neighbour, flag) && collision.test(flag, neighbour)) { return flag; }
+        }
+        // No reversible entrance: never forecast into the flag. Prefer a
+        // reachable cardinal neighbour, then a diagonal only if none exists.
+        // Both searches share the established finite vertex/route bounds and
+        // execute once for this input, not while preparing every render frame.
+        List<LocalPoint> route = search(from, 64, collision, point ->
+            Math.abs(point.getX() - flag.getX()) + Math.abs(point.getY() - flag.getY()) == tile);
+        if (route == null)
+        {
+            route = search(from, 64, collision, point -> MovementPath.distance(point, flag) == tile);
+        }
+        return route == null ? flag : route.isEmpty() ? from : route.get(route.size() - 1);
+    }
+
     static List<LocalPoint> find(LocalPoint from, LocalPoint to, int maxSteps,
         BiPredicate<LocalPoint, LocalPoint> collision)
     {

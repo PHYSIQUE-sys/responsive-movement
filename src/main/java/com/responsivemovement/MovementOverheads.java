@@ -4,6 +4,8 @@ import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import javax.inject.Inject;
 import net.runelite.api.Client;
@@ -16,6 +18,7 @@ import net.runelite.api.Skill;
 import net.runelite.api.WorldView;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.plugins.interfacestyles.InterfaceStylesPlugin;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.Overlay;
@@ -32,15 +35,17 @@ final class MovementOverheads extends Overlay
     private final ConfigManager configManager;
     private final OverheadHitsplats hitsplats = new OverheadHitsplats();
     private final OverheadAssets assets = new OverheadAssets();
+    private final OverheadRenderer renderer;
     private int healthUntilCycle;
     private final BufferedImage hdFront;
     private final BufferedImage hdBack;
 
     @Inject
     MovementOverheads(Client client, ResponsiveMovementPlugin plugin,
-        ResponsiveMovementConfig config, ConfigManager configManager)
+        ResponsiveMovementConfig config, ConfigManager configManager, EventBus eventBus)
     {
         this.client = client; this.plugin = plugin; this.config = config; this.configManager = configManager;
+        renderer = new OverheadRenderer(eventBus::post);
         hdFront = ImageUtil.loadImageResource(InterfaceStylesPlugin.class, "2010/healthbar/default_front_40px.png");
         hdBack = ImageUtil.loadImageResource(InterfaceStylesPlugin.class, "2010/healthbar/default_back_40px.png");
         setPosition(OverlayPosition.DYNAMIC);
@@ -103,14 +108,30 @@ final class MovementOverheads extends Overlay
         BufferedImage skull = assets.skull(player.getSkullIcon());
         if (skull != null)
         {
-            graphics.drawImage(skull, head.getX() - skull.getWidth() / 2, head.getY() - 32 + offset, null);
+            drawIcon(graphics, "SKULL", skull, head.getX(), head.getY() - 32 + offset);
             offset -= 28;
         }
         HeadIcon prayer = player.getOverheadIcon();
         BufferedImage prayerImage = prayer == null ? null : assets.prayer(prayer);
-        if (prayerImage != null)
+        BufferedImage prayerArtwork = prayer == null ? null : renderer.artwork(440, prayer.ordinal());
+        if (prayerArtwork != null)
         {
-            graphics.drawImage(prayerImage, head.getX() - prayerImage.getWidth() / 2, head.getY() - 32 + offset, null);
+            int width = prayerImage == null ? 25 : prayerImage.getWidth();
+            int height = prayerImage == null ? 25 : prayerImage.getHeight();
+            Rectangle bounds = new Rectangle(head.getX() - width / 2, head.getY() - 32 + offset, width, height);
+            renderer.draw(graphics, "PRAYER", 0, bounds, prayerArtwork, g -> {
+                Graphics2D imageGraphics = (Graphics2D) g.create();
+                try
+                {
+                    imageGraphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                    imageGraphics.drawImage(prayerArtwork, bounds.x, bounds.y, bounds.width, bounds.height, null);
+                }
+                finally { imageGraphics.dispose(); }
+            });
+        }
+        else if (prayerImage != null)
+        {
+            drawIcon(graphics, "PRAYER", prayerImage, head.getX(), head.getY() - 32 + offset);
         }
         drawHitsplats(graphics, player, point);
         return null;
@@ -125,14 +146,25 @@ final class MovementOverheads extends Overlay
         {
             int width = hdFront.getWidth(), height = hdFront.getHeight();
             int left = x - width / 2, fill = healthFill(width, ratio, 1);
-            graphics.drawImage(hdBack, left, y, null);
-            graphics.drawImage(hdFront, left, y, left + fill, y + height, 0, 0, fill, height, null);
+            renderer.draw(graphics, "HEALTH_BAR", 0, new Rectangle(left, y, width, height), g -> {
+                g.drawImage(hdBack, left, y, null);
+                g.drawImage(hdFront, left, y, left + fill, y + height, 0, 0, fill, height, null);
+            });
         }
         else
         {
-            graphics.setColor(Color.RED); graphics.fillRect(x - 15, y, 30, 5);
-            graphics.setColor(Color.GREEN); graphics.fillRect(x - 15, y, healthFill(30, ratio, 0), 5);
+            renderer.draw(graphics, "HEALTH_BAR", 0, new Rectangle(x - 15, y, 30, 5), g -> {
+                g.setColor(Color.RED); g.fillRect(x - 15, y, 30, 5);
+                g.setColor(Color.GREEN); g.fillRect(x - 15, y, healthFill(30, ratio, 0), 5);
+            });
         }
+    }
+
+    private void drawIcon(Graphics2D graphics, String kind, BufferedImage image, int centerX, int y)
+    {
+        int x = centerX - image.getWidth() / 2;
+        renderer.draw(graphics, kind, 0, new Rectangle(x, y, image.getWidth(), image.getHeight()),
+            g -> g.drawImage(image, x, y, null));
     }
 
     static int healthFill(int width, float ratio, int padding)
@@ -156,12 +188,15 @@ final class MovementOverheads extends Overlay
             int x = point.getX() + offsets[i][0], y = point.getY() + 8 + offsets[i][1];
             BufferedImage image = assets.hit(hit.type);
             FontMetrics metrics = graphics.getFontMetrics();
-            if (image != null)
-            {
-                graphics.drawImage(image, x + metrics.stringWidth(text) / 2 - image.getWidth() / 2,
-                    y - metrics.getHeight() + (metrics.getHeight() - image.getHeight()) / 2, null);
-            }
-            drawText(graphics, text, x, y, Color.WHITE);
+            int imageX = image == null ? x : x + metrics.stringWidth(text) / 2 - image.getWidth() / 2;
+            int imageY = image == null ? y : y - metrics.getHeight() + (metrics.getHeight() - image.getHeight()) / 2;
+            Rectangle bounds = new Rectangle(x, y - metrics.getAscent(), metrics.stringWidth(text) + 1,
+                metrics.getAscent() + metrics.getDescent() + 1);
+            if (image != null) { bounds.add(new Rectangle(imageX, imageY, image.getWidth(), image.getHeight())); }
+            renderer.draw(graphics, "HITSPLAT", i, bounds, g -> {
+                if (image != null) { g.drawImage(image, imageX, imageY, null); }
+                drawText(g, text, x, y, Color.WHITE);
+            });
         }
     }
 

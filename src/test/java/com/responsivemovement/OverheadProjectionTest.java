@@ -116,7 +116,8 @@ public class OverheadProjectionTest
                 @Override boolean customUi() { return true; }
                 @Override LocalPoint position() { return point; }
             };
-            MovementOverheads overheads = new MovementOverheads(client, plugin, new ResponsiveMovementConfig() {}, null);
+            MovementOverheads overheads = new MovementOverheads(client, plugin, new ResponsiveMovementConfig() {}, null,
+                new net.runelite.client.eventbus.EventBus());
             BufferedImage image = new BufferedImage(200, 200, BufferedImage.TYPE_INT_ARGB);
             Graphics2D graphics = image.createGraphics();
             try { overheads.render(graphics); }

@@ -31,7 +31,7 @@ public class PluginFallbackTest
                 }
             });
         ResponsiveMovementPlugin plugin = new ResponsiveMovementPlugin();
-        MovementOverheads overheads = new MovementOverheads(client, plugin, config, null);
+        MovementOverheads overheads = new MovementOverheads(client, plugin, config, null, new net.runelite.client.eventbus.EventBus());
         inject(plugin, "client", client);
         inject(plugin, "config", config);
         inject(plugin, "movement", f.controller);
@@ -81,7 +81,7 @@ public class PluginFallbackTest
         inject(plugin, "client", client);
         inject(plugin, "movement", f.controller);
         inject(plugin, "camera", new PresentationCamera(client, config));
-        inject(plugin, "overheads", new MovementOverheads(client, plugin, config, null));
+        inject(plugin, "overheads", new MovementOverheads(client, plugin, config, null, new net.runelite.client.eventbus.EventBus()));
         inject(plugin, "active", true);
 
         plugin.onBeforeRender(new BeforeRender());

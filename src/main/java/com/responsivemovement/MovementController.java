@@ -47,6 +47,7 @@ final class MovementController
     private boolean pohArrival;
     private boolean yellowFacing;
     private boolean walkInput;
+    private LocalPoint walkApproachGoal;
     private boolean preserveFacing;
     private boolean facingSettled;
     private int nativeTarget;
@@ -209,6 +210,7 @@ final class MovementController
 
     private void armClick(LocalPoint previousDestination, int smoothingMillis)
     {
+        walkApproachGoal = null;
         // Observe only the destination published after this actual client
         // action. Target coordinates are not necessarily an approach tile.
         clickCycle = client.getGameCycle();
@@ -520,6 +522,9 @@ final class MovementController
         if (routeClear && yellowFacing && !interactionApproach &&
             !input.pending() && walkEffectsAllowed && previewPoseAllowed() && config.responsiveStarts())
         {
+            MovementPath resumed = walkInput && walkApproachGoal != null && walkApproachGoal.equals(path.clickedDestination())
+                ? path.resumeWalkAuthority(authoritative, client.getLocalDestinationLocation(), runEnabled(), now) : null;
+            if (resumed != null) { path = resumed; startDecision = "resumed-walk-authority"; }
             MovementPath aligned = path.alignWalkAuthority(authoritative, runEnabled(), now);
             if (aligned != null)
             {
@@ -913,6 +918,14 @@ final class MovementController
             return;
         }
         if (!config.responsiveStarts() || !previewPoseAllowed() || !previewEffectsAllowed()) { return; }
+        if (!interactionApproach)
+        {
+            if (walkApproachGoal == null)
+            {
+                walkApproachGoal = MovementRoute.walkGoal(path.confirmed(), destination, this::canStep);
+            }
+            destination = walkApproachGoal;
+        }
         // Destination observation belongs to the click, even when its first
         // route cannot be built. A later native refinement must still be seen.
         if (interactionApproach && npcApproach == null && (interactionTarget != null || objectApproach != null || nativeApproach != null))
@@ -993,7 +1006,8 @@ final class MovementController
         }
         if (next != null)
         {
-            if (!interactionApproach) { next.pendingWalkConfirmation(); }
+            if (!interactionApproach) { next.pendingWalkConfirmation(origin.equals(authoritative) &&
+                !owner.getLocalLocation().equals(authoritative)); }
             startDecision = shortNpcPair ? "started-npc-run-pair" : provisionalNpc ? "started-npc-approach" : "started";
             path = next;
             if (interactionApproach)

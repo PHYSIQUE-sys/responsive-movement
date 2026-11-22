@@ -66,6 +66,7 @@ final class MovementPath
     private double tangentY;
     private boolean walkContinuity;
     private boolean walkForecast;
+    private boolean walkStartInFlight;
     private boolean arrivalWalking;
     private boolean arrivalPaced;
     private boolean publicationWalking;
@@ -599,7 +600,7 @@ final class MovementPath
                     onSegment(occupied.start, occupied.end) &&
                         (anchor.equals(occupied.start) || anchor.equals(occupied.end)))) { return null; }
             LocalPoint crossing = sharedCorridorCrossing(occupied, knight, destination);
-            Leg connector = occupied.endingAt(crossing == null ? anchor : crossing, running());
+            Leg connector = occupied.endingAt(crossing == null ? anchor : crossing, recovering && run ? next.running : running());
             // Its very short positional alignment should not make the body face
             // back toward the preceding click before turning into the new chord.
             connector.headingX = destination.getX() - x;
@@ -662,6 +663,10 @@ final class MovementPath
             next.running = true;
             for (Leg leg : next.legs) { leg.running = true; }
         }
+        // A fresh running Walk can replace a slow recovery connector. Its
+        // checked fractional departure belongs to the new run, too; otherwise
+        // delayed authority leaves a walk-speed pause before the first pair.
+        if (recovering && run && next.running) { connector.running = true; }
         int gap = (next.forecastSteps() + 1) * TILE;
         if (distance(position(), confirmed) > gap || distance(anchor, confirmed) > gap) { return null; }
         // Nearby coordinates alone cannot justify a cross-wall connection to
@@ -798,11 +803,40 @@ final class MovementPath
     /** Fresh idle Walks and moving replacements share the same already-true-goal rule. */
     void pendingWalkConfirmation()
     {
+        pendingWalkConfirmation(false);
+    }
+
+    void pendingWalkConfirmation(boolean precedingMovement)
+    {
         walkForecast = true;
+        walkStartInFlight = precedingMovement && speculative;
         if (!legs.isEmpty() && confirmed.equals(clickedDestination()) && !position().equals(confirmed))
         {
             speculative = reversalPreview = true;
         }
+    }
+
+    /** Real matching authority may fund a new bounded Walk after forecast expiry. */
+    MovementPath resumeWalkAuthority(LocalPoint endpoint, LocalPoint destination, boolean run, long now)
+    {
+        LocalPoint goal = clickedDestination();
+        if (!walkForecast || !recovering || invalid || goal == null || !goal.equals(destination) ||
+            !sameView(endpoint, confirmed) || endpoint.equals(confirmed)) { return null; }
+        int previous = clickedPath.indexOf(confirmed), next = clickedPath.indexOf(endpoint);
+        if (previous < 0 || next <= previous || next > previous + 2) { return null; }
+        LocalPoint at = confirmed;
+        for (LocalPoint step : clickedPath.subList(previous + 1, next + 1))
+        {
+            if (!collision.test(at, step) || !collision.test(step, at)) { return null; }
+            at = step;
+        }
+        // The old horizon has ended. Only a new checked logical publication,
+        // with this same onward Walk flag, can fund a fresh bounded forecast.
+        // Join from the current recovery fraction instead of retracing an old
+        // intermediate endpoint and then traversing the same ground again.
+        MovementPath joined = alignForwardAuthority(endpoint, goal, run, now, true);
+        if (joined != null) { joined.inheritWalkContinuity(this); }
+        return joined;
     }
 
     /** Re-anchor a fresh walk to new off-route authority through the occupied checked edge. */
@@ -810,8 +844,14 @@ final class MovementPath
     {
         LocalPoint goal = clickedDestination();
         if (invalid || recovering || !speculative || !agreement || replacement ||
-            !reversalPreview || !sameView(endpoint, confirmed) || endpoint.equals(confirmed) ||
+            !(reversalPreview || walkStartInFlight) || !sameView(endpoint, confirmed) || endpoint.equals(confirmed) ||
             clickedPath.contains(endpoint) || goal == null || now >= deadline || now >= chainDeadline) { return null; }
+        // An idle seed has no explicit moving-retarget evidence. Only authority
+        // that strictly closes the goal gap AND follows the displayed direction
+        // can re-anchor it; a sideways preceding step must still reconcile.
+        if (!reversalPreview && (distance(endpoint, goal) >= distance(confirmed, goal) ||
+            (goal.getX() - x) * (endpoint.getX() - confirmed.getX()) +
+                (goal.getY() - y) * (endpoint.getY() - confirmed.getY()) <= 0)) { return null; }
         // A preceding step can be off this fresh itinerary even when its old
         // true tile was the construction origin. Checked forward progress must
         // join the latest goal instead of rejecting it and idling at that step.
@@ -1706,6 +1746,7 @@ final class MovementPath
         confirmedTripTiles = Math.min(MAX_ROUTE, confirmedTripTiles + steps.size());
         tripEnded = false;
         if (retainNpcRetarget(endpoint) || retainPendingReversal(endpoint)) { return !invalid; }
+        walkStartInFlight = false;
         npcRetarget = false;
         if (combatTracking && sameView(npcMin, npcMax))
         {
@@ -1831,7 +1872,7 @@ final class MovementPath
 
     private boolean retainPendingReversal(LocalPoint endpoint)
     {
-        if (!reversalPreview || !speculative || !agreement || replacement || recovering ||
+        if (!(reversalPreview || walkStartInFlight) || !speculative || !agreement || replacement || recovering ||
             lastNanos >= deadline || lastNanos >= chainDeadline || clickedPath.isEmpty()) { return false; }
         int index = clickedPath.indexOf(endpoint);
         if (index >= 0 && (awaitingOrigin && index == 0 || confirmedClickIndex >= 0 &&
@@ -2864,7 +2905,8 @@ final class MovementPath
                 (path.agreement ? 8 : 0) | (path.awaitingOrigin ? 16 : 0) | (path.reversalPreview ? 32 : 0) |
                 (path.invalid ? 64 : 0) | (path.easingNpcStart ? 128 : 0) | (path.running ? 256 : 0) | (path.npcRetarget ? 512 : 0) |
                 (path.combatTracking ? 1024 : 0) | (path.combatCredit ? 2048 : 0) | (path.combatTrailing ? 4096 : 0) |
-                (path.walkContinuity ? 8192 : 0) | (path.confirmedArrivalTrip ? 16384 : 0) | (path.nativeCounterPairs ? 32768 : 0);
+                (path.walkContinuity ? 8192 : 0) | (path.confirmedArrivalTrip ? 16384 : 0) | (path.nativeCounterPairs ? 32768 : 0) |
+                (path.walkStartInFlight && path.speculative && !path.replacement && !path.recovering ? 65536 : 0);
             confirmedClickIndex = path.confirmedClickIndex; confirmedPreviewIndex = path.confirmedPreviewIndex;
             confirmedTripTiles = path.confirmedTripTiles;
             reserve = path.npcReserveTiles; deadline = path.deadline; chainDeadline = path.chainDeadline; speed = path.multiplier;
