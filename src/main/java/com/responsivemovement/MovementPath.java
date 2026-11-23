@@ -2305,7 +2305,9 @@ final class MovementPath
         int tripTiles = counterIndex < 0 ? !confirmedArrivalTrip && !clickedPath.isEmpty() && agreement ?
             clickedPath.size()-1 : confirmedTripTiles : confirmedTripTiles+Math.max(0,counterIndex-confirmedClickIndex);
         double tripLength = tripTiles * (double) TILE;
-        arrival = tripLength >= 3 * TILE ? arrival.fit(tripLength) : ArrivalPacing.OFF;
+        // Arrival easing can bring a run down to walking pace, but must not
+        // slow a route that is already walking.
+        arrival = running && tripLength >= 3 * TILE ? arrival.fit(tripLength) : ArrivalPacing.OFF;
         double millis = Math.min(100, Math.max(0, now - lastNanos) / 1_000_000.0);
         long frameStart = lastNanos;
         lastNanos = now;
@@ -2349,7 +2351,7 @@ final class MovementPath
             }
             double debt = boost > 0 && !Double.isFinite(confirmedRate) ? catchUpDebt() : 0;
             double lead = slowdown > 0 && debt <= 0 ? forecastLead() : Double.NaN;
-            double arrivalRemaining = arrival.enabled() ? arrivalRemaining(arrivalGoal) : Double.NaN;
+            double arrivalRemaining = leg.running && arrival.enabled() ? arrivalRemaining(arrivalGoal) : Double.NaN;
             if (leg.curve != null)
             {
                 JoinCurve curve = leg.curve;
@@ -2449,7 +2451,7 @@ final class MovementPath
             legs.removeFirst();
         }
         if (legs.isEmpty()) { tangentX = tangentY = 0; }
-        if (arrival.enabled())
+        if (running() && arrival.enabled())
         {
             double remaining = arrivalRemaining(arrivalGoal);
             arrivalPaced = Double.isFinite(remaining) && remaining <= arrival.length() + EPS;

@@ -16,6 +16,7 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.gameval.AnimationID;
 import net.runelite.api.gameval.VarPlayerID;
+import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.util.Text;
 
 /** One controller and one MovementPath for ordinary and anticipatory movement. */
@@ -47,6 +48,7 @@ final class MovementController
     private boolean pohArrival;
     private boolean yellowFacing;
     private boolean walkInput;
+    private Boolean walkRunOverride;
     private LocalPoint walkApproachGoal;
     private boolean preserveFacing;
     private boolean facingSettled;
@@ -193,6 +195,14 @@ final class MovementController
         nativeApproach = null;
         nativeIntentPreview = interactionReplacementPending = false;
         npcApproach = null; npcPreview = false;
+        walkRunOverride = null;
+        if (client.isKeyPressed(KeyCode.KC_CONTROL))
+        {
+            boolean orbRun = client.getVarpValue(VarPlayerID.OPTION_RUN) == 1;
+            int mode = client.getVarbitValue(VarbitID.RUNINVERT_MODE);
+            // Native choices: Never (0), Walk -> Run (1), Run -> Walk (2), Always (3).
+            if (mode == 3 || mode == (orbRun ? 2 : 1)) { walkRunOverride = !orbRun; }
+        }
         armClick(previousDestination, smoothingMillis);
         // A successfully armed explicit Walk owns its input across a delayed
         // non-location action from the preceding interaction. It supplies no
@@ -216,7 +226,7 @@ final class MovementController
         clickCycle = client.getGameCycle();
         startDecision = "ineligible-click";
         if (owner != null && config.responsiveStarts() && previewPoseAllowed() &&
-            previewEffectsAllowed() && !client.isKeyPressed(KeyCode.KC_CONTROL))
+            previewEffectsAllowed() && (walkRunOverride != null || !client.isKeyPressed(KeyCode.KC_CONTROL)))
         {
             input.click(previousDestination, clock.getAsLong(), generation, owner.getWorldView().getPlane(), smoothingMillis);
             startDecision = "awaiting-destination";
@@ -226,6 +236,7 @@ final class MovementController
 
     void worldInteraction(MenuOptionClicked event)
     {
+        walkRunOverride = null;
         InteractionFacing previousInteractionFacing = interactionFacing;
         interactionFacing = null;
         walkInput = false;
@@ -546,6 +557,7 @@ final class MovementController
             // native presentation until a supported local segment is available.
             path = null;
             walkInput = false;
+            walkRunOverride = null;
             nativeApproach = null;
             clearCombat();
             clearCombatWalk();
@@ -742,6 +754,10 @@ final class MovementController
         // prepared frame, without an intermediate idle publication.
         tryStart(now, authoritative);
         visible = path.position();
+        if (destination == null && !input.pending() && path.finished() && nativePoint.equals(authoritative))
+        {
+            walkRunOverride = null;
+        }
         boolean held = preserveFacing && (!facingSettled || !visible.equals(nativePoint)) ||
             interactionApproach && !nativeArrived || faceTarget != null || combatWalk;
         boolean ready = presentation.prepare(visible, (int) facing.angle(), posedMoving,
@@ -1260,6 +1276,7 @@ final class MovementController
         nativeIntentPreview = interactionReplacementPending = false;
         interactionFacing = null;
         walkInput = false;
+        walkRunOverride = null;
         followPresentation = null;
         clearCombat();
         clearCombatWalk();
@@ -1397,7 +1414,11 @@ final class MovementController
         }
     }
 
-    private boolean runEnabled() { return client.getVarpValue(VarPlayerID.OPTION_RUN) == 1 && client.getEnergy() > 0; }
+    private boolean runEnabled()
+    {
+        return (walkRunOverride != null ? walkRunOverride : client.getVarpValue(VarPlayerID.OPTION_RUN) == 1) &&
+            client.getEnergy() > 0;
+    }
 
     private boolean canStep(LocalPoint from, LocalPoint to)
     {

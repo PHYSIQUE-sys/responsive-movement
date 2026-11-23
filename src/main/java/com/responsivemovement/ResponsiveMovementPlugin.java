@@ -102,7 +102,7 @@ public class ResponsiveMovementPlugin extends Plugin
         {
             long hash = object.getHash();
             if (RenderState.isPlayer(hash)) { lastGpuCallbackNanos = System.nanoTime(); }
-            return renderState.drawObject(hash, object.getId());
+            return renderState.drawObject(hash, object);
         }
     };
 

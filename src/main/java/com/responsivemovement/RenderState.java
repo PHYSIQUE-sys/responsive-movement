@@ -1,6 +1,8 @@
 package com.responsivemovement;
 
+import net.runelite.api.GameObject;
 import net.runelite.api.Player;
+import net.runelite.api.TileObject;
 
 /** Immutable publication; render callbacks never inspect live controllers. */
 final class RenderState
@@ -20,8 +22,12 @@ final class RenderState
 
     static boolean isPlayer(long hash) { return ((hash >>> 16) & 7L) == 0; }
 
-    boolean drawObject(long hash, int id)
+    boolean drawObject(long hash, TileObject object)
     {
-        return !hideBody || !isPlayer(hash) || id != playerId || ((hash >>> 52) & 4095L) != worldView;
+        if (!hideBody) { return true; }
+        // A temporary object can carry the exact actor even when its tag
+        // doesn't identify it as the local player.
+        if (player != null && object instanceof GameObject && ((GameObject) object).getRenderable() == player) { return false; }
+        return !isPlayer(hash) || ((hash >>> 52) & 4095L) != worldView || object.getId() != playerId;
     }
 }

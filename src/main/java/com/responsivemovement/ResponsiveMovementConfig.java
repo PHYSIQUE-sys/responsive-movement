@@ -90,7 +90,7 @@ public interface ResponsiveMovementConfig extends Config
     default int slowAheadPercent() { return 10; }
 
     @ConfigItem(keyName = "slowArrival", name = "Slow down on arrival", position = 4,
-        description = "Two configurable arrival stages for trips of at least three tiles, including diagonal steps. Displayed movement only", section = PACING)
+        description = "Two configurable arrival stages for runs of at least three tiles, including diagonal steps. Walking pace is unaffected", section = PACING)
     default boolean slowArrival() { return false; }
 
     @ConfigItem(keyName = "slowArrivalPercent", name = "Legacy arrival slowdown (%)", position = 9, hidden = true,
@@ -104,7 +104,7 @@ public interface ResponsiveMovementConfig extends Config
     default double arrivalFirstTiles() { return 0.2; }
 
     @ConfigItem(keyName = "arrivalFirstSpeed", name = "First slowdown speed (%)", position = 6,
-        description = "Speed reached at the end of the first stage, as a percentage of normal displayed walk/run speed (1–100)", section = PACING)
+        description = "Speed reached at the end of the first stage, as a percentage of normal displayed run speed (1–100)", section = PACING)
     default double arrivalFirstSpeed() { return slowArrivalPercent() == 0 ? 100 : 50; }
 
     @ConfigItem(keyName = "arrivalFinalTiles", name = "Final slowdown length (tiles)", position = 7,
@@ -112,7 +112,7 @@ public interface ResponsiveMovementConfig extends Config
     default double arrivalFinalTiles() { return 1; }
 
     @ConfigItem(keyName = "arrivalFinalSpeed", name = "Final slowdown speed (%)", position = 8,
-        description = "Speed reached at arrival, independently as a percentage of normal displayed walk/run speed (1–100). Use a lower value than the first speed for a slower finish", section = PACING)
+        description = "Speed reached at arrival, independently as a percentage of normal displayed run speed (1–100). Use a lower value than the first speed for a slower finish", section = PACING)
     default double arrivalFinalSpeed()
     {
         int legacy = slowArrivalPercent();
